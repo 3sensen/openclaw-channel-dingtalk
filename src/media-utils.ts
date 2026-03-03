@@ -18,6 +18,7 @@ import type { DingTalkConfig, Logger } from "./types";
 import { formatDingTalkErrorPayloadLog } from "./utils";
 
 export type DingTalkMediaType = "image" | "voice" | "video" | "file";
+export type DingTalkOutboundMediaType = DingTalkMediaType;
 
 export interface PreparedMediaInput {
   path: string;
@@ -129,6 +130,46 @@ export function detectMediaTypeFromExtension(filePath: string): DingTalkMediaTyp
   }
 
   return "file";
+}
+
+function normalizeOutboundMediaType(value?: string | null): DingTalkOutboundMediaType | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "image" || normalized === "voice" || normalized === "video" || normalized === "file") {
+    return normalized;
+  }
+
+  return undefined;
+}
+
+export function resolveOutboundMediaType(params: {
+  mediaType?: string | null;
+  mediaPath: string;
+  asVoice: boolean;
+}): DingTalkOutboundMediaType {
+  const explicitType = normalizeOutboundMediaType(params.mediaType);
+  const detectedType = detectMediaTypeFromExtension(params.mediaPath);
+
+  if (params.asVoice) {
+    if (explicitType && explicitType !== "voice") {
+      throw new Error('asVoice requires mediaType="voice" when mediaType is provided.');
+    }
+
+    if (detectedType !== "voice") {
+      throw new Error("asVoice requires an audio file (mp3, amr, wav).");
+    }
+
+    return "voice";
+  }
+
+  if (explicitType) {
+    return explicitType;
+  }
+
+  return detectedType;
 }
 
 function isRemoteMediaUrl(input: string): boolean {
