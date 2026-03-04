@@ -57,6 +57,39 @@ openclaw plugins install -l .
 2. 确保包含 `index.ts`, `openclaw.plugin.json` 和 `package.json`。
 3. 运行 `openclaw plugins list` 确认 `dingtalk` 已显示在列表中。
 
+### 方法 D：国内网络环境安装（npm 镜像源）
+
+如果你在国内网络环境下执行 `openclaw plugins install @soimy/dingtalk` 时卡在 `Installing plugin dependencies...` 或出现 `npm install failed`，可临时为该次安装指定镜像源：
+
+```bash
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @soimy/dingtalk
+```
+
+如果插件已处于半安装状态（例如扩展目录存在但依赖未装全），可进入插件目录手动补装依赖：
+
+```bash
+cd ~/.openclaw/extensions/dingtalk
+rm -rf node_modules package-lock.json
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
+```
+
+如果希望长期生效，可设置 npm 默认镜像：
+
+```bash
+npm config set registry https://registry.npmmirror.com
+```
+
+或写入 `~/.npmrc`：
+
+```ini
+registry=https://registry.npmmirror.com
+```
+
+> 说明：
+> - 临时环境变量方式仅对当前命令生效，不会污染全局配置。
+> - 若 OpenClaw 运行在 systemd / Docker 等服务环境，请在对应服务环境变量中配置 `NPM_CONFIG_REGISTRY`。
+> - 相关背景可参考 issue [#216](https://github.com/soimy/openclaw-channel-dingtalk/issues/216)。
+
 ### 安装后必做：配置插件信任白名单（`plugins.allow`）
 
 从 OpenClaw 新版本开始，如果发现了非内置插件且 `plugins.allow` 为空，会提示：
@@ -114,6 +147,20 @@ openclaw gateway restart
 
 ```bash
 openclaw plugins update dingtalk
+```
+
+国内网络环境可临时指定镜像源后再更新：
+
+```bash
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins update dingtalk
+```
+
+如果插件已处于半安装状态（例如扩展目录存在但依赖未装全），可进入插件目录手动补装依赖：
+
+```bash
+cd ~/.openclaw/extensions/dingtalk
+rm -rf node_modules package-lock.json
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 ```
 
 如果你是本地源码/链接安装（`openclaw plugins install -l .`），请在插件目录更新代码后重启 Gateway：
