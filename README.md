@@ -286,6 +286,8 @@ openclaw configure --section channels
       "agentId": "123456789",
       "dmPolicy": "open",
       "groupPolicy": "open",
+      "showThinking": true, // 仅 markdown 模式生效
+      "thinkingMessage": "🤔 思考中，请稍候...", // 仅 markdown 模式生效
       "debug": false,
       "messageType": "markdown", // 或 "card"
       // "mediaMaxMb": 20,  // 可选：接收文件大小上限（MB），默认 5 MB
@@ -320,6 +322,8 @@ openclaw gateway restart
 | `groupPolicy`           | string   | `"open"`     | 群聊策略：open/allowlist                    |
 | `allowFrom`             | string[] | `[]`         | 允许的发送者 ID 列表                        |
 | `mediaUrlAllowlist`     | string[] | `[]`         | 允许通过 `mediaUrl` 下载的主机/IP/CIDR 白名单 |
+| `showThinking`          | boolean  | `true`       | 是否发送“思考中”提示消息（仅 markdown 模式生效） |
+| `thinkingMessage`       | string   | `"🤔 思考中，请稍候..."` | 自定义“思考中”提示文案（showThinking 开启时生效，仅 markdown 模式） |
 | `messageType`           | string   | `"markdown"` | 消息类型：markdown/card                     |
 | `cardTemplateId`        | string   |              | AI 互动卡片模板 ID（仅当 messageType=card） |
 | `cardTemplateKey`       | string   | `"content"`  | 卡片模板内容字段键（仅当 messageType=card） |

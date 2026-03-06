@@ -24,6 +24,7 @@ import { acquireSessionLock } from "./session-lock";
 import { formatDingTalkErrorPayloadLog, maskSensitiveData } from "./utils";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
+const DEFAULT_THINKING_MESSAGE = "🤔 思考中，请稍候...";
 const proactiveHintLastSentAt = new Map<string, number>();
 
 export function resetProactivePermissionHintStateForTest(): void {
@@ -443,13 +444,15 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   // causes empty replies for all but the first caller.
   const releaseSessionLock = await acquireSessionLock(route.sessionKey);
   try {
-    // 4) Optional "thinking..." feedback for non-card mode.
+    // 4) Optional "thinking..." feedback (markdown mode only).
     if (dingtalkConfig.showThinking !== false) {
-      try {
-        const thinkingText = "🤔 思考中，请稍候...";
-        if (useCardMode && currentAICard) {
-          log?.debug?.("[DingTalk] AI Card in thinking state, skipping thinking message send.");
-        } else {
+      const thinkingText = (dingtalkConfig.thinkingMessage || "").trim() || DEFAULT_THINKING_MESSAGE;
+      if (useCardMode && currentAICard) {
+        log?.debug?.(
+          "[DingTalk] messageType=card: showThinking/thinkingMessage do not send standalone hints; thinking is streamed in card mode.",
+        );
+      } else {
+        try {
           lastCardContent = thinkingText;
           const sendResult = await sendMessage(dingtalkConfig, to, thinkingText, {
             sessionWebhook,
@@ -460,11 +463,11 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           if (!sendResult.ok) {
             throw new Error(sendResult.error || "Thinking message send failed");
           }
-        }
-      } catch (err: any) {
-        log?.debug?.(`[DingTalk] Thinking message failed: ${err.message}`);
-        if (err?.response?.data !== undefined) {
-          log?.debug?.(formatDingTalkErrorPayloadLog("inbound.thinkingMessage", err.response.data));
+        } catch (err: any) {
+          log?.debug?.(`[DingTalk] Thinking message failed: ${err.message}`);
+          if (err?.response?.data !== undefined) {
+            log?.debug?.(formatDingTalkErrorPayloadLog("inbound.thinkingMessage", err.response.data));
+          }
         }
       }
     }

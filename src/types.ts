@@ -43,6 +43,7 @@ export interface DingTalkConfig extends OpenClawConfig {
   allowFrom?: string[];
   mediaUrlAllowlist?: string[];
   showThinking?: boolean;
+  thinkingMessage?: string;
   debug?: boolean;
   messageType?: "markdown" | "card";
   cardTemplateId?: string;
@@ -82,6 +83,7 @@ export interface DingTalkChannelConfig {
   allowFrom?: string[];
   mediaUrlAllowlist?: string[];
   showThinking?: boolean;
+  thinkingMessage?: string;
   debug?: boolean;
   messageType?: "markdown" | "card";
   cardTemplateId?: string;
@@ -572,6 +574,7 @@ export function resolveDingTalkAccount(
       groupPolicy: dingtalk?.groupPolicy,
       allowFrom: dingtalk?.allowFrom,
       showThinking: dingtalk?.showThinking,
+      thinkingMessage: dingtalk?.thinkingMessage,
       debug: dingtalk?.debug,
       messageType: dingtalk?.messageType,
       cardTemplateId: dingtalk?.cardTemplateId,

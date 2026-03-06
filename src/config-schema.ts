@@ -33,8 +33,11 @@ const DingTalkAccountConfigSchema = z.object({
 
   mediaUrlAllowlist: z.array(z.string()).optional(),
 
-  /** Show thinking indicator while processing */
+  /** Show thinking indicator while processing (markdown mode only) */
   showThinking: z.boolean().optional().default(true),
+
+  /** Custom thinking message content when showThinking is enabled (markdown mode only) */
+  thinkingMessage: z.string().optional().default("🤔 思考中，请稍候..."),
 
   /** Enable debug logging */
   debug: z.boolean().optional().default(false),
