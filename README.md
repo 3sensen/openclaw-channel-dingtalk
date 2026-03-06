@@ -622,8 +622,14 @@ await dingtalkPlugin.outbound.sendMedia({
 
 ### 连接失败
 
-1. 检查 clientId 和 clientSecret 是否正确
-2. 确认网络可以访问钉钉 API
+初始化阶段如果只看到 HTTP `400`，它通常不等于“单纯网络不通”；更常见的是钉钉已收到请求，但拒绝了请求内容或当前应用状态不满足要求。
+
+建议先运行仓库内的最小连接检查脚本，确认 `POST /v1.0/gateway/connections/open` 是否成功：
+
+- macOS / Linux: `bash scripts/dingtalk-connection-check.sh --config ~/.openclaw/openclaw.json`
+- Windows PowerShell: `pwsh -File scripts/dingtalk-connection-check.ps1 -Config ~/.openclaw/openclaw.json`
+
+完整排障流程见 `docs/connection-troubleshooting.md`。
 
 ### 错误 payload 日志规范（`[ErrorPayload]`）
 
