@@ -755,7 +755,8 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         } catch (err: any) {
           ctx.log?.error?.(
             formatDingTalkConnectionErrorLog(
-              "connect.native",
+              // Use connect.open as base scope; instrumentation can override to connect.websocket
+              "connect.open",
               err,
               `[${account.accountId}] Failed to establish connection: ${err.message}`,
             ) ?? `[${account.accountId}] Failed to establish connection: ${err.message}`,
@@ -856,7 +857,8 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
       } catch (err: any) {
         ctx.log?.error?.(
           formatDingTalkConnectionErrorLog(
-            "connect.manager",
+            // Use connect.open as base scope; instrumentation can override to connect.websocket
+            "connect.open",
             err,
             `[${account.accountId}] Failed to establish connection: ${err.message}`,
           ) ?? `[${account.accountId}] Failed to establish connection: ${err.message}`,

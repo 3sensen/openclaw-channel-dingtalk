@@ -1,6 +1,6 @@
 # DingTalk Connection Troubleshooting Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> Note: This implementation plan is intended to be followed task by task by engineers implementing the DingTalk connection troubleshooting workflow.
 
 **Goal:** Improve DingTalk connection-init diagnostics by logging structured startup failures, adding minimal cross-platform `connections/open` diagnostic scripts, and documenting the troubleshooting workflow.
 

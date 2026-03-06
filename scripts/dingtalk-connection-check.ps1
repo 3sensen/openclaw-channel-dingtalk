@@ -48,12 +48,15 @@ function Sanitize-Object($Value) {
     if ($Value -is [string]) {
         return $Value
     }
-    if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [hashtable]) -and -not ($Value.PSObject.Properties.Name.Count -gt 0)) {
-        $items = @()
-        foreach ($Item in $Value) {
-            $items += (Sanitize-Object $Item)
+    # Explicitly handle arrays/lists (excluding string/hashtable) by visiting each element
+    if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [string]) -and -not ($Value -is [hashtable])) {
+        if ($Value.GetType().IsArray -or ($Value -is [System.Collections.IList])) {
+            $items = @()
+            foreach ($Item in $Value) {
+                $items += (Sanitize-Object $Item)
+            }
+            return $items
         }
-        return $items
     }
 
     $result = @{}
