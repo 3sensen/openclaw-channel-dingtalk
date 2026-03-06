@@ -125,6 +125,84 @@ describe('ConnectionManager', () => {
         expect(manager.getState()).toBe(ConnectionState.FAILED);
     });
 
+    it('logs structured DingTalk payload details for startup 400 failures', async () => {
+        const log = {
+            info: vi.fn(),
+            warn: vi.fn(),
+            error: vi.fn(),
+            debug: vi.fn(),
+        };
+        const err = Object.assign(new Error('Request failed with status code 400'), {
+            response: {
+                status: 400,
+                data: {
+                    code: 'invalidParameter',
+                    message: 'ua invalid',
+                    requestId: 'req-body-1',
+                },
+                headers: {
+                    'x-acs-dingtalk-request-id': 'req-header-1',
+                },
+            },
+        });
+        const client = {
+            connected: false,
+            socket: undefined,
+            connect: vi.fn().mockRejectedValue(err),
+            disconnect: vi.fn(),
+        } as any;
+
+        const manager = new ConnectionManager(
+            client,
+            'main',
+            {
+                maxAttempts: 1,
+                initialDelay: 100,
+                maxDelay: 1000,
+                jitter: 0,
+            },
+            log,
+        );
+
+        await expect(manager.connect()).rejects.toThrow('Failed to connect after 1 attempts');
+
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('status=400'));
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('requestId=req-header-1'));
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('code=invalidParameter'));
+        expect(log.error).toHaveBeenCalledWith(expect.stringContaining('docs/connection-troubleshooting.md'));
+    });
+
+    it('falls back to the generic error message when structured response data is unavailable', async () => {
+        const log = {
+            info: vi.fn(),
+            warn: vi.fn(),
+            error: vi.fn(),
+            debug: vi.fn(),
+        };
+        const client = {
+            connected: false,
+            socket: undefined,
+            connect: vi.fn().mockRejectedValue(new Error('plain failure')),
+            disconnect: vi.fn(),
+        } as any;
+
+        const manager = new ConnectionManager(
+            client,
+            'main',
+            {
+                maxAttempts: 1,
+                initialDelay: 100,
+                maxDelay: 1000,
+                jitter: 0,
+            },
+            log,
+        );
+
+        await expect(manager.connect()).rejects.toThrow('Failed to connect after 1 attempts');
+
+        expect(log.error).toHaveBeenCalledWith('[main] Connection attempt 1 failed: plain failure');
+    });
+
     it('handles runtime disconnection and schedules reconnect', async () => {
         const socket = new EventEmitter();
         const client = {

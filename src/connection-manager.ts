@@ -17,6 +17,7 @@ import type {
   Logger,
 } from "./types";
 import { ConnectionState as ConnectionStateEnum } from "./types";
+import { formatDingTalkConnectionErrorLog } from "./utils";
 
 /**
  * ConnectionManager handles the robust connection lifecycle for DWClient
@@ -181,7 +182,11 @@ export class ConnectionManager {
       return { success: true, attempt: successfulAttempt };
     } catch (err: any) {
       this.log?.error?.(
-        `[${this.accountId}] Connection attempt ${this.attemptCount} failed: ${err.message}`,
+        formatDingTalkConnectionErrorLog(
+          "connect.open",
+          err,
+          `[${this.accountId}] Connection attempt ${this.attemptCount} failed: ${err.message}`,
+        ) ?? `[${this.accountId}] Connection attempt ${this.attemptCount} failed: ${err.message}`,
       );
 
       // Check if we've exceeded max attempts

@@ -39,7 +39,12 @@ import type {
   ResolvedAccount,
 } from "./types";
 import { ConnectionState } from "./types";
-import { cleanupOrphanedTempFiles, formatDingTalkErrorPayloadLog, getCurrentTimestamp } from "./utils";
+import {
+  cleanupOrphanedTempFiles,
+  formatDingTalkConnectionErrorLog,
+  formatDingTalkErrorPayloadLog,
+  getCurrentTimestamp,
+} from "./utils";
 
 const INFLIGHT_TTL_MS = 5 * 60 * 1000; // 5 min safety net for hung handlers
 const processingDedupKeys = new Map<string, number>(); // key → timestamp when acquired
@@ -679,7 +684,13 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
             await nativeStopPromise;
           }
         } catch (err: any) {
-          ctx.log?.error?.(`[${account.accountId}] Failed to establish connection: ${err.message}`);
+          ctx.log?.error?.(
+            formatDingTalkConnectionErrorLog(
+              "connect.native",
+              err,
+              `[${account.accountId}] Failed to establish connection: ${err.message}`,
+            ) ?? `[${account.accountId}] Failed to establish connection: ${err.message}`,
+          );
           ctx.setStatus({
             ...ctx.getStatus(),
             running: false,
@@ -774,7 +785,13 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           );
         }
       } catch (err: any) {
-        ctx.log?.error?.(`[${account.accountId}] Failed to establish connection: ${err.message}`);
+        ctx.log?.error?.(
+          formatDingTalkConnectionErrorLog(
+            "connect.manager",
+            err,
+            `[${account.accountId}] Failed to establish connection: ${err.message}`,
+          ) ?? `[${account.accountId}] Failed to establish connection: ${err.message}`,
+        );
 
         ctx.setStatus({
           ...ctx.getStatus(),
