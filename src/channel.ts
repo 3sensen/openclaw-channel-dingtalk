@@ -400,12 +400,17 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         }
         const data = result.data as any;
         const messageId = String(data?.processQueryKey || data?.messageId || randomUUID());
+        const meta =
+          result.data || result.tracking
+            ? {
+                ...(result.data ? { data: result.data as unknown as Record<string, unknown> } : {}),
+                ...(result.tracking ? { tracking: result.tracking } : {}),
+              }
+            : undefined;
         return {
           channel: "dingtalk",
           messageId,
-          meta: result.data
-            ? { data: result.data as unknown as Record<string, unknown> }
-            : undefined,
+          meta,
         };
       } catch (err: any) {
         if (err?.response?.data !== undefined) {
