@@ -193,4 +193,43 @@ describe('quote-journal', () => {
     });
     expect(fs.existsSync(persistedFile)).toBe(true);
   });
+
+  it('caps journal records per scope and evicts oldest entries', async () => {
+    const storePath = storePathInTemp();
+    const baseNow = 2_000_000;
+
+    for (let i = 0; i < 1005; i++) {
+      await appendQuoteJournalEntry({
+        storePath,
+        accountId: 'main',
+        conversationId: 'cid_1',
+        msgId: `msg_${i}`,
+        messageType: 'text',
+        text: `text_${i}`,
+        createdAt: baseNow + i,
+        nowMs: baseNow + i,
+      });
+    }
+
+    const oldest = await resolveQuotedMessageById({
+      storePath,
+      accountId: 'main',
+      conversationId: 'cid_1',
+      originalMsgId: 'msg_0',
+      ttlDays: 7,
+      nowMs: baseNow + 1005,
+    });
+
+    const newest = await resolveQuotedMessageById({
+      storePath,
+      accountId: 'main',
+      conversationId: 'cid_1',
+      originalMsgId: 'msg_1004',
+      ttlDays: 7,
+      nowMs: baseNow + 1005,
+    });
+
+    expect(oldest).toBeNull();
+    expect(newest?.text).toBe('text_1004');
+  });
 });

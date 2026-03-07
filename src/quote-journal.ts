@@ -5,6 +5,7 @@ import { readNamespaceJson, writeNamespaceJsonAtomic } from "./persistence-store
 const QUOTE_JOURNAL_NAMESPACE = "quoted.msg-journal";
 const QUOTE_JOURNAL_VERSION = 1;
 const DEFAULT_JOURNAL_TTL_DAYS = 7;
+const MAX_RECORDS_PER_SCOPE = 1000;
 
 type JournalEntry = {
   msgId: string;
@@ -150,6 +151,13 @@ function pruneByTtl(records: JournalEntry[], ttlDays: number, nowMs: number): Jo
   return records.filter((entry) => entry.createdAt >= cutoff);
 }
 
+function capRecords(records: JournalEntry[]): JournalEntry[] {
+  if (records.length <= MAX_RECORDS_PER_SCOPE) {
+    return records;
+  }
+  return records.slice(-MAX_RECORDS_PER_SCOPE);
+}
+
 export async function appendQuoteJournalEntry(params: {
   storePath: string;
   accountId: string;
@@ -171,6 +179,7 @@ export async function appendQuoteJournalEntry(params: {
     text: params.text,
     createdAt: params.createdAt,
   });
+  const cappedRecords = capRecords(records);
   writeState({
     storePath: params.storePath,
     accountId: params.accountId,
@@ -178,7 +187,7 @@ export async function appendQuoteJournalEntry(params: {
     state: {
       version: QUOTE_JOURNAL_VERSION,
       updatedAt: now,
-      records,
+      records: cappedRecords,
     },
   });
 }
@@ -220,7 +229,7 @@ export async function resolveQuotedMessageById(params: {
   const state = loadState(params);
   const now = params.nowMs ?? Date.now();
   const ttlDays = params.ttlDays ?? DEFAULT_JOURNAL_TTL_DAYS;
-  const records = pruneByTtl(state.records, ttlDays, now);
+  const records = capRecords(pruneByTtl(state.records, ttlDays, now));
   for (let i = records.length - 1; i >= 0; i--) {
     const entry = records[i];
     if (entry.msgId === params.originalMsgId) {
