@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,10 +8,16 @@ import {
     clearCardContentCacheForTest,
     findCardContent,
 } from '../../src/card-service';
+import { resolveNamespacePath } from '../../src/persistence-store';
 
 describe('card-content-cache', () => {
+    let tempDir = '';
+    let storePath = '';
+
     beforeEach(() => {
         clearCardContentCacheForTest();
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dingtalk-card-content-cache-'));
+        storePath = path.join(tempDir, 'session-store.json');
     });
 
     it('基本读写（±2秒时间匹配）', () => {
@@ -60,5 +69,25 @@ describe('card-content-cache', () => {
 
         expect(findCardContent('default', 'dm_conv', 1000100)).toBe('单聊内容');
         expect(findCardContent('default', 'group_conv', 2000100)).toBe('群聊内容');
+    });
+
+    it('持久化后可在重启后恢复匹配', () => {
+        const accountId = 'default';
+        const conversationId = 'conv_persist';
+        const createdAt = 1234567;
+
+        cacheCardContent(accountId, conversationId, '持久化内容', createdAt, storePath);
+
+        const persistedFile = resolveNamespacePath('cards.content.quote-lookup', {
+            storePath,
+            scope: { accountId, conversationId },
+            format: 'json',
+        });
+        expect(fs.existsSync(persistedFile)).toBe(true);
+
+        clearCardContentCacheForTest();
+
+        const restored = findCardContent(accountId, conversationId, createdAt + 500, storePath);
+        expect(restored).toBe('持久化内容');
     });
 });

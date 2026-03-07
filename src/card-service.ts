@@ -606,7 +606,7 @@ export async function finishAICard(
   log?.debug?.(`[DingTalk][AICard] Starting finish, final content length=${content.length}`);
   await streamAICard(card, content, true, log);
   if (card.conversationId && content.trim()) {
-    cacheCardContent(card.accountId || "", card.conversationId, content, card.createdAt);
+    cacheCardContent(card.accountId || "", card.conversationId, content, card.createdAt, card.storePath);
   }
 }
 
@@ -616,6 +616,7 @@ const CARD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CARD_CACHE_MAX_PER_CONVERSATION = 20;
 const CARD_CACHE_MAX_CONVERSATIONS = 500;
 const CARD_CACHE_MATCH_WINDOW_MS = 2000;
+const CARD_CONTENT_NAMESPACE = "cards.content.quote-lookup";
 
 interface CardContentEntry {
   content: string;
@@ -628,13 +629,79 @@ interface CardConversationBucket {
   lastActiveAt: number;
 }
 
+interface PersistedCardContentBucket {
+  updatedAt: number;
+  entries: CardContentEntry[];
+}
+
 const cardContentStore = new Map<string, CardConversationBucket>();
+
+function loadCardContentBucketFromPersistence(
+  accountId: string,
+  conversationId: string,
+  storePath?: string,
+): CardConversationBucket | null {
+  if (!storePath) {
+    return null;
+  }
+  const persisted = readNamespaceJson<PersistedCardContentBucket>(CARD_CONTENT_NAMESPACE, {
+    storePath,
+    scope: { accountId, conversationId },
+    format: "json",
+    fallback: { updatedAt: 0, entries: [] },
+  });
+  if (!Array.isArray(persisted.entries) || persisted.entries.length === 0) {
+    return null;
+  }
+
+  const now = Date.now();
+  const entries = persisted.entries
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry.content === "string" &&
+        typeof entry.createdAt === "number" &&
+        typeof entry.expiresAt === "number" &&
+        now < entry.expiresAt,
+    )
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .slice(-CARD_CACHE_MAX_PER_CONVERSATION);
+
+  if (entries.length === 0) {
+    return null;
+  }
+  return {
+    entries,
+    lastActiveAt: now,
+  };
+}
+
+function persistCardContentBucket(
+  accountId: string,
+  conversationId: string,
+  bucket: CardConversationBucket,
+  storePath?: string,
+): void {
+  if (!storePath) {
+    return;
+  }
+  writeNamespaceJsonAtomic(CARD_CONTENT_NAMESPACE, {
+    storePath,
+    scope: { accountId, conversationId },
+    format: "json",
+    data: {
+      updatedAt: Date.now(),
+      entries: bucket.entries,
+    } satisfies PersistedCardContentBucket,
+  });
+}
 
 export function cacheCardContent(
   accountId: string,
   conversationId: string,
   content: string,
   createdAt: number,
+  storePath?: string,
 ): void {
   const scopedKey = `${accountId}:${conversationId}`;
   let bucket = cardContentStore.get(scopedKey);
@@ -666,15 +733,38 @@ export function cacheCardContent(
     bucket.entries.sort((a, b) => a.createdAt - b.createdAt);
     bucket.entries = bucket.entries.slice(-CARD_CACHE_MAX_PER_CONVERSATION);
   }
+
+  persistCardContentBucket(accountId, conversationId, bucket, storePath);
 }
 
 export function findCardContent(
   accountId: string,
   conversationId: string,
   repliedCreatedAt: number,
+  storePath?: string,
 ): string | null {
   const scopedKey = `${accountId}:${conversationId}`;
-  const bucket = cardContentStore.get(scopedKey);
+  let bucket = cardContentStore.get(scopedKey);
+  if (!bucket && storePath && cardContentStore.size < CARD_CACHE_MAX_CONVERSATIONS) {
+    const loaded = loadCardContentBucketFromPersistence(accountId, conversationId, storePath);
+    if (loaded) {
+      cardContentStore.set(scopedKey, loaded);
+      bucket = loaded;
+      if (cardContentStore.size > CARD_CACHE_MAX_CONVERSATIONS) {
+        let oldestKey: string | undefined;
+        let oldestTime = Infinity;
+        for (const [key, b] of cardContentStore) {
+          if (b.lastActiveAt < oldestTime) {
+            oldestTime = b.lastActiveAt;
+            oldestKey = key;
+          }
+        }
+        if (oldestKey) {
+          cardContentStore.delete(oldestKey);
+        }
+      }
+    }
+  }
   if (!bucket) {
     return null;
   }
