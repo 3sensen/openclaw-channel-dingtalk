@@ -37,7 +37,7 @@ describe("persistence-store", () => {
 
         expect(resolved).toContain(path.join(path.dirname(storePath), "dingtalk-state"));
         expect(resolved).toContain("cards.active.pending");
-        expect(resolved).toContain("account-main");
+        expect(resolved).toContain("account-bWFpbg");
         expect(resolved.endsWith(".json")).toBe(true);
     });
 

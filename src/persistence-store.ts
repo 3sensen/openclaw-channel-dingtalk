@@ -45,6 +45,10 @@ function sanitizeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function encodeScopeValue(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
 function buildScopeSuffix(scope?: PersistenceScope): string {
   if (!scope) {
     return "";
@@ -59,7 +63,7 @@ function buildScopeSuffix(scope?: PersistenceScope): string {
 
   const segments = ordered
     .filter(([, value]) => Boolean(value && value.trim()))
-    .map(([key, value]) => `${key.replace(/Id$/, "")}-${sanitizeSegment((value || "").trim())}`);
+    .map(([key, value]) => `${key.replace(/Id$/, "")}-${encodeScopeValue((value || "").trim())}`);
 
   if (segments.length === 0) {
     return "";
@@ -102,14 +106,26 @@ export function writeNamespaceJsonAtomic<T>(
   options: WriteNamespaceJsonOptions<T>,
 ): void {
   const filePath = resolveNamespacePath(namespace, options);
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
     fs.writeFileSync(tempPath, JSON.stringify(options.data, null, 2));
-    fs.renameSync(tempPath, filePath);
+    try {
+      fs.renameSync(tempPath, filePath);
+    } catch (err: unknown) {
+      if (fs.existsSync(filePath)) {
+        fs.rmSync(filePath, { force: true });
+        fs.renameSync(tempPath, filePath);
+      } else {
+        throw err;
+      }
+    }
   } catch (err: unknown) {
     options.log?.warn?.(
       `[DingTalk][Persistence] Failed to write namespace=${namespace} path=${filePath}: ${toErrorMessage(err)}`,
     );
+    if (fs.existsSync(tempPath)) {
+      fs.rmSync(tempPath, { force: true });
+    }
   }
 }
