@@ -664,7 +664,7 @@ function loadCardContentBucketFromPersistence(
         typeof entry.expiresAt === "number" &&
         now < entry.expiresAt,
     )
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .toSorted((a, b) => a.createdAt - b.createdAt)
     .slice(-CARD_CACHE_MAX_PER_CONVERSATION);
 
   if (entries.length === 0) {
