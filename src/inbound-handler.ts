@@ -370,8 +370,14 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     }
   }
 
+  const hasConcreteQuotedPayload =
+    !!content.quoted?.mediaDownloadCode ||
+    !!content.quoted?.isQuotedFile ||
+    !!content.quoted?.isQuotedCard ||
+    content.quoted?.prefix.startsWith('[引用消息: "') === true;
+
   // Journal-based quoted text resolution when only originalMsgId is present
-  if (data.text?.isReplyMsg && data.originalMsgId && !content.text.includes("[引用消息:")) {
+  if (data.text?.isReplyMsg && data.originalMsgId && !hasConcreteQuotedPayload) {
     try {
       const quoted = await resolveQuotedMessageById({
         storePath,
