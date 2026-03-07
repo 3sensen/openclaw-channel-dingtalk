@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     cacheInboundDownloadCode,
     getCachedDownloadCode,
@@ -17,6 +17,15 @@ describe('quoted-msg-cache', () => {
         clearQuotedMsgCacheForTest();
         tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dingtalk-quoted-msg-cache-'));
         storePath = path.join(tempDir, 'session-store.json');
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        if (tempDir) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+        tempDir = '';
+        storePath = '';
     });
 
     it('基本缓存写入和读取', () => {
@@ -94,7 +103,28 @@ describe('quoted-msg-cache', () => {
             'code_1000',
         );
 
-        expect(getCachedDownloadCode('default', 'conv_0', 'msg1', storePath)).toBeNull();
+        clearQuotedMsgCacheForTest();
+        expect(getCachedDownloadCode('default', 'conv_0', 'msg1', storePath)!.downloadCode).toBe('code_0');
+    });
+
+    it('容量已满时仍可从持久化恢复新会话数据', () => {
+        const baseTime = Date.now();
+
+        cacheInboundDownloadCode('default', 'conv_persisted', 'msg_persisted', 'code_persisted', 'file', baseTime, {
+            storePath,
+        });
+
+        clearQuotedMsgCacheForTest();
+
+        for (let i = 0; i < 1000; i++) {
+            cacheInboundDownloadCode('default', `conv_${i}`, 'msg1', `code_${i}`, 'file', baseTime + i + 1, {
+                storePath,
+            });
+        }
+
+        const restored = getCachedDownloadCode('default', 'conv_persisted', 'msg_persisted', storePath);
+        expect(restored).not.toBeNull();
+        expect(restored!.downloadCode).toBe('code_persisted');
     });
 
     it('持久化后可在重启后恢复读取', () => {

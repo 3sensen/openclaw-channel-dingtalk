@@ -24,6 +24,24 @@ interface PersistedConversationBucket {
     entries: Record<string, DownloadCodeCacheEntry>;
 }
 
+function isValidPersistedEntry(entry: unknown): entry is DownloadCodeCacheEntry {
+    if (!entry || typeof entry !== 'object') {
+        return false;
+    }
+
+    const candidate = entry as Partial<DownloadCodeCacheEntry>;
+    return (
+        typeof candidate.downloadCode === 'string' &&
+        candidate.downloadCode.length > 0 &&
+        typeof candidate.msgType === 'string' &&
+        candidate.msgType.length > 0 &&
+        typeof candidate.createdAt === 'number' &&
+        Number.isFinite(candidate.createdAt) &&
+        typeof candidate.expiresAt === 'number' &&
+        Number.isFinite(candidate.expiresAt)
+    );
+}
+
 const store = new Map<string, ConversationBucket>();
 
 function getBucket(conversationId: string): ConversationBucket | undefined {
@@ -108,7 +126,7 @@ function loadFromPersistence(
     };
     for (const key of keys) {
         const entry = persisted.entries[key];
-        if (!entry) {
+        if (!isValidPersistedEntry(entry)) {
             continue;
         }
         bucket.entries.set(key, entry);
@@ -174,7 +192,7 @@ export function getCachedDownloadCode(
 ): DownloadCodeCacheEntry | null {
     const scopedKey = `${accountId}:${conversationId}`;
     let bucket = getBucket(scopedKey);
-    if (!bucket && storePath && store.size < MAX_CONVERSATIONS) {
+    if (!bucket && storePath) {
         const loaded = loadFromPersistence(accountId, conversationId, storePath);
         if (loaded) {
             store.set(scopedKey, loaded);
