@@ -256,6 +256,12 @@ export interface SendMessageOptions {
   cardFinalize?: boolean;
 }
 
+export interface DingTalkTrackingMetadata {
+  processQueryKey?: string;
+  outTrackId?: string;
+  cardInstanceId?: string;
+}
+
 /**
  * Session webhook response
  */
@@ -489,6 +495,8 @@ export interface AICardInstance {
   state: AICardState; // Current card state: PROCESSING, INPUTING, FINISHED, FAILED
   config?: DingTalkConfig; // Store config reference for token refresh
   lastStreamedContent?: string;
+  processQueryKey?: string;
+  outTrackId?: string;
 }
 
 /**
