@@ -39,7 +39,9 @@ export class ConnectionManager {
   private static readonly HEALTH_CHECK_GRACE_MS = 3000;
   private static readonly HEALTH_CHECK_UNHEALTHY_THRESHOLD = 2;
   private static readonly DEFAULT_MAX_RECONNECT_CYCLES = 10;
-  // If time between health checks exceeds this, system likely slept/hibernated
+  // Absolute threshold for hibernation detection; intentionally decoupled from
+  // HEALTH_CHECK_INTERVAL_MS. A system is considered hibernated if the interval
+  // between consecutive health checks exceeds this value (timer skew after wake-up).
   private static readonly SLEEP_DETECTION_THRESHOLD_MS = 30000; // 30 seconds
   private lastHealthCheckAt?: number; // Track last health check time for sleep detection
   private runtimeReconnectCycles: number = 0;
