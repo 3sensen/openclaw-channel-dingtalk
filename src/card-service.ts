@@ -956,23 +956,31 @@ function loadCardContentBucketFromPersistence(
   }
 
   const now = Date.now();
-  const entries = persisted.entries
-    .filter(
-      (entry) =>
-        entry &&
-        typeof entry.content === "string" &&
-        typeof entry.createdAt === "number" &&
-        typeof entry.expiresAt === "number" &&
-        now < entry.expiresAt,
-    )
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-CARD_CACHE_MAX_PER_CONVERSATION);
+  const entries: CardContentEntry[] = [];
+  for (const entry of persisted.entries) {
+    if (
+      !entry ||
+      typeof entry.content !== "string" ||
+      typeof entry.createdAt !== "number" ||
+      typeof entry.expiresAt !== "number" ||
+      now >= entry.expiresAt
+    ) {
+      continue;
+    }
+    const insertAt = entries.findIndex((item) => item.createdAt > entry.createdAt);
+    if (insertAt < 0) {
+      entries.push(entry);
+    } else {
+      entries.splice(insertAt, 0, entry);
+    }
+  }
+  const normalizedEntries = entries.slice(-CARD_CACHE_MAX_PER_CONVERSATION);
 
-  if (entries.length === 0) {
+  if (normalizedEntries.length === 0) {
     return null;
   }
   return {
-    entries,
+    entries: normalizedEntries,
     lastActiveAt: now,
   };
 }
