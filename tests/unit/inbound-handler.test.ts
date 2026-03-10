@@ -54,6 +54,7 @@ vi.mock('../../src/session-lock', () => ({
 }));
 
 vi.mock('../../src/quote-journal', () => ({
+    DEFAULT_JOURNAL_TTL_DAYS: 7,
     appendQuoteJournalEntry: shared.appendQuoteJournalEntryMock,
     resolveQuotedMessageById: shared.resolveQuotedMessageByIdMock,
 }));
@@ -304,7 +305,7 @@ describe('inbound-handler', () => {
             accountId: 'main',
             sessionWebhook: 'https://session.webhook',
             log: undefined,
-            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown' } as any,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown', journalTTLDays: 9 } as any,
             data: {
                 msgId: 'm_journal_1',
                 msgtype: 'text',
@@ -327,6 +328,7 @@ describe('inbound-handler', () => {
                 messageType: 'text',
                 text: 'hello',
                 createdAt: 1700000000000,
+                ttlDays: 9,
             }),
         );
     });
@@ -353,7 +355,7 @@ describe('inbound-handler', () => {
             accountId: 'main',
             sessionWebhook: 'https://session.webhook',
             log: undefined,
-            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown' } as any,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown', journalTTLDays: 11 } as any,
             data: {
                 msgId: 'm_quote_1',
                 msgtype: 'text',
@@ -373,6 +375,7 @@ describe('inbound-handler', () => {
                 accountId: 'main',
                 conversationId: 'cid_ok',
                 originalMsgId: 'orig_msg_001',
+                ttlDays: 11,
             }),
         );
 

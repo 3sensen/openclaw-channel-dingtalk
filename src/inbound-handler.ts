@@ -25,7 +25,7 @@ import { findCardContent } from "./card-service";
 import { cacheInboundDownloadCode, getCachedDownloadCode } from "./quoted-msg-cache";
 import { downloadGroupFile, getUnionIdByStaffId, resolveQuotedFile } from "./quoted-file-service";
 import { formatDingTalkErrorPayloadLog, maskSensitiveData } from "./utils";
-import { appendQuoteJournalEntry, resolveQuotedMessageById } from "./quote-journal";
+import { appendQuoteJournalEntry, DEFAULT_JOURNAL_TTL_DAYS, resolveQuotedMessageById } from "./quote-journal";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const DEFAULT_THINKING_MESSAGE = "🤔 思考中，请稍候...";
@@ -375,6 +375,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     !!content.quoted?.isQuotedFile ||
     !!content.quoted?.isQuotedCard ||
     content.quoted?.prefix.startsWith('[引用消息: "') === true;
+  const journalTTLDays = dingtalkConfig.journalTTLDays ?? DEFAULT_JOURNAL_TTL_DAYS;
 
   // Journal-based quoted text resolution when only originalMsgId is present
   if (data.text?.isReplyMsg && data.originalMsgId && !hasConcreteQuotedPayload) {
@@ -384,9 +385,11 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         accountId,
         conversationId: groupId,
         originalMsgId: data.originalMsgId,
+        ttlDays: journalTTLDays,
       });
       if (quoted?.text?.trim()) {
-        content = { ...content, text: `[引用消息: "${quoted.text.trim()}"]\n\n${content.text}` };
+        const cleanedText = content.text.replace(/^\[这是一条引用消息，原消息ID: [^\]]+\]\n\n/, "");
+        content = { ...content, text: `[引用消息: "${quoted.text.trim()}"]\n\n${cleanedText}` };
       }
     } catch (err) {
       log?.debug?.(`[DingTalk] Quote journal lookup failed: ${String(err)}`);
@@ -402,6 +405,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       messageType: content.messageType,
       text: stripQuotedPrefixForJournal(content.text),
       createdAt: data.createAt,
+      ttlDays: journalTTLDays,
     });
   } catch (err) {
     log?.debug?.(`[DingTalk] Quote journal append failed: ${String(err)}`);
