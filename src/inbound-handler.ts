@@ -786,7 +786,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
                 atUserId: !isDirect ? senderId : null,
                 log,
                 card: currentAICard,
-                cardUpdateMode: "append",
+                cardUpdateMode: "replace",
               });
               if (!sendResult.ok) {
                 throw new Error(sendResult.error || "Thinking stream send failed");
