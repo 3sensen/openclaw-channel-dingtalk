@@ -20,11 +20,16 @@ import {
   formatLearnListReply,
   formatOwnerOnlyDeniedReply,
   formatOwnerStatusReply,
+  formatSessionAliasClearedReply,
+  formatSessionAliasReply,
+  formatSessionAliasSetReply,
+  formatSessionAliasValidationErrorReply,
   formatTargetSetSavedReply,
   formatWhereAmIReply,
   formatWhoAmIReply,
   isLearningOwner,
   parseLearnCommand,
+  validateSessionAlias,
 } from "./learning-command-service";
 import { extractMessageContent } from "./message-utils";
 import { registerPeerId } from "./peer-id-registry";
@@ -34,6 +39,8 @@ import {
 } from "./proactive-risk-registry";
 import { getDingTalkRuntime } from "./runtime";
 import { sendBySession, sendMessage } from "./send-service";
+import { clearSessionPeerOverride, getSessionPeerOverride, setSessionPeerOverride } from "./session-peer-store";
+import { resolveDingTalkSessionPeer } from "./session-routing";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { AICardStatus } from "./types";
 import { acquireSessionLock } from "./session-lock";
@@ -346,19 +353,33 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     }
   }
 
+  const accountStorePath = rt.channel.session.resolveStorePath(cfg.session?.store, {
+    agentId: accountId,
+  });
+  const peerIdOverride = !isDirect
+    ? getSessionPeerOverride({
+      storePath: accountStorePath,
+      accountId,
+      conversationId: groupId,
+    })
+    : undefined;
+  const sessionPeer = resolveDingTalkSessionPeer({
+    isDirect,
+    senderId,
+    conversationId: groupId,
+    peerIdOverride,
+    config: dingtalkConfig,
+  });
   const route = rt.channel.routing.resolveAgentRoute({
     cfg,
     channel: "dingtalk",
     accountId,
-    peer: { kind: isDirect ? "direct" : "group", id: isDirect ? senderId : groupId },
+    peer: { kind: sessionPeer.kind, id: sessionPeer.peerId },
   });
 
   // Route resolved before media download for session context and routing metadata.
   const storePath = rt.channel.session.resolveStorePath(cfg.session?.store, {
     agentId: route.agentId,
-  });
-  const accountStorePath = rt.channel.session.resolveStorePath(cfg.session?.store, {
-    agentId: accountId,
   });
 
   const to = isDirect ? senderId : groupId;
@@ -390,6 +411,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       formatWhereAmIReply({
         conversationId: data.conversationId,
         conversationType: isDirect ? "dm" : "group",
+        peerId: sessionPeer.peerId,
       }),
       { log },
     );
@@ -412,6 +434,19 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     await sendBySession(dingtalkConfig, sessionWebhook, formatLearnCommandHelp(), { log });
     return;
   }
+  if (!isDirect && parsedLearnCommand.scope === "session-alias-show") {
+    await sendBySession(
+      dingtalkConfig,
+      sessionWebhook,
+      formatSessionAliasReply({
+        conversationId: data.conversationId,
+        peerId: sessionPeer.peerId,
+        aliasSource: peerIdOverride ? "override" : "default",
+      }),
+      { log },
+    );
+    return;
+  }
   if (
     (parsedLearnCommand.scope === "global"
       || parsedLearnCommand.scope === "session"
@@ -421,6 +456,8 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       || parsedLearnCommand.scope === "list"
       || parsedLearnCommand.scope === "disable"
       || parsedLearnCommand.scope === "delete"
+      || parsedLearnCommand.scope === "session-alias-set"
+      || parsedLearnCommand.scope === "session-alias-clear"
       || parsedLearnCommand.scope === "target-set-create"
       || parsedLearnCommand.scope === "target-set-apply")
     && !isOwner
@@ -429,6 +466,50 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     return;
   }
   if (isOwner) {
+    if (!isDirect && parsedLearnCommand.scope === "session-alias-set" && parsedLearnCommand.peerId) {
+      const aliasValidationError = validateSessionAlias(parsedLearnCommand.peerId);
+      if (aliasValidationError) {
+        await sendBySession(
+          dingtalkConfig,
+          sessionWebhook,
+          formatSessionAliasValidationErrorReply(aliasValidationError),
+          { log },
+        );
+        return;
+      }
+      setSessionPeerOverride({
+        storePath: accountStorePath,
+        accountId,
+        conversationId: data.conversationId,
+        peerId: parsedLearnCommand.peerId,
+      });
+      await sendBySession(
+        dingtalkConfig,
+        sessionWebhook,
+        formatSessionAliasSetReply({
+          conversationId: data.conversationId,
+          peerId: parsedLearnCommand.peerId,
+        }),
+        { log },
+      );
+      return;
+    }
+    if (!isDirect && parsedLearnCommand.scope === "session-alias-clear") {
+      clearSessionPeerOverride({
+        storePath: accountStorePath,
+        accountId,
+        conversationId: data.conversationId,
+      });
+      await sendBySession(
+        dingtalkConfig,
+        sessionWebhook,
+        formatSessionAliasClearedReply({
+          conversationId: data.conversationId,
+        }),
+        { log },
+      );
+      return;
+    }
     if (parsedLearnCommand.scope === "global" && parsedLearnCommand.instruction) {
       const applied = applyManualGlobalLearningRule({
         storePath: accountStorePath,

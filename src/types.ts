@@ -27,6 +27,8 @@ export interface DingtalkPluginModule {
   register?: (api: OpenClawPluginApi) => void | Promise<void>;
 }
 
+export type DingTalkGroupSessionScope = "group";
+
 /**
  * DingTalk channel configuration (extends base OpenClaw config)
  */
@@ -40,6 +42,7 @@ export interface DingTalkConfig extends OpenClawConfig {
   enabled?: boolean;
   dmPolicy?: "open" | "pairing" | "allowlist";
   groupPolicy?: "open" | "allowlist";
+  groupSessionScope?: DingTalkGroupSessionScope;
   allowFrom?: string[];
   mediaUrlAllowlist?: string[];
   showThinking?: boolean;
@@ -98,6 +101,7 @@ export interface DingTalkChannelConfig {
   name?: string;
   dmPolicy?: "open" | "pairing" | "allowlist";
   groupPolicy?: "open" | "allowlist";
+  groupSessionScope?: DingTalkGroupSessionScope;
   allowFrom?: string[];
   mediaUrlAllowlist?: string[];
   showThinking?: boolean;

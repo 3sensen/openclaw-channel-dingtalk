@@ -504,6 +504,139 @@ describe('inbound-handler', () => {
         expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
         expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('conversationId: `cid_group_1`');
         expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('conversationType: `group`');
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('peerId: `cid_group_1`');
+    });
+
+    it('handleDingTalkMessage lets owner set a shared session alias for current group', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared-dev', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_set',
+                msgtype: 'text',
+                text: { content: '/session-alias set shared-dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('peerId: `shared-dev`');
+    });
+
+    it('handleDingTalkMessage accepts extra whitespace in session alias command', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias  set   shared-dev', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_set_spacing',
+                msgtype: 'text',
+                text: { content: '/session-alias  set   shared-dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('peerId: `shared-dev`');
+    });
+
+    it('handleDingTalkMessage rejects invalid session alias characters', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared:dev', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_invalid_chars',
+                msgtype: 'text',
+                text: { content: '/session-alias set shared:dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('共享会话别名不合法');
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('[a-zA-Z0-9_-]{1,64}');
+    });
+
+    it('uses stored session alias as the routed group peerId on next turn', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared-dev', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_bootstrap',
+                msgtype: 'text',
+                text: { content: '/session-alias set shared-dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        shared.sendBySessionMock.mockClear();
+        const runtime = buildRuntime();
+        const resolveAgentRoute = vi.fn().mockReturnValue({ agentId: 'main', sessionKey: 's1', mainSessionKey: 's1' });
+        runtime.channel.routing.resolveAgentRoute = resolveAgentRoute;
+        shared.getRuntimeMock.mockReturnValueOnce(runtime);
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: 'hello again', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open', messageType: 'markdown', showThinking: false } as any,
+            data: {
+                msgId: 'm2_session_alias_followup',
+                msgtype: 'text',
+                text: { content: 'hello again' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'user_1',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(resolveAgentRoute).toHaveBeenCalledWith(expect.objectContaining({
+            peer: { kind: 'group', id: 'shared-dev' },
+        }));
     });
 
     it('handleDingTalkMessage applies and disables a global learned rule', async () => {
@@ -868,8 +1001,8 @@ describe('inbound-handler', () => {
         const runtime = buildRuntime();
         runtime.channel.session.resolveStorePath = vi
             .fn()
-            .mockReturnValueOnce('/tmp/agent-store.json')
-            .mockReturnValueOnce('/tmp/account-store.json');
+            .mockReturnValueOnce('/tmp/account-store.json')
+            .mockReturnValueOnce('/tmp/agent-store.json');
         shared.getRuntimeMock.mockReturnValueOnce(runtime);
         shared.extractMessageContentMock.mockReturnValueOnce({
             text: '[引用了机器人的回复]\n\nhello',
@@ -919,8 +1052,8 @@ describe('inbound-handler', () => {
         const runtime = buildRuntime();
         runtime.channel.session.resolveStorePath = vi
             .fn()
-            .mockReturnValueOnce('/tmp/agent-store.json')
-            .mockReturnValueOnce('/tmp/account-store.json');
+            .mockReturnValueOnce('/tmp/account-store.json')
+            .mockReturnValueOnce('/tmp/agent-store.json');
         shared.getRuntimeMock.mockReturnValueOnce(runtime);
         shared.extractMessageContentMock.mockReturnValueOnce({
             text: '[引用了机器人的回复]\n\nhello',
