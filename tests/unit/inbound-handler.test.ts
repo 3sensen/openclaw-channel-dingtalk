@@ -639,6 +639,113 @@ describe('inbound-handler', () => {
         }));
     });
 
+    it('routes different groups with the same alias to the same sessionKey', async () => {
+        const ownerCfg = { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } };
+
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared-dev', messageType: 'text' });
+        await handleDingTalkMessage({
+            cfg: ownerCfg,
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_group1_set',
+                msgtype: 'text',
+                text: { content: '/session-alias set shared-dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared-dev', messageType: 'text' });
+        await handleDingTalkMessage({
+            cfg: ownerCfg,
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_group2_set',
+                msgtype: 'text',
+                text: { content: '/session-alias set shared-dev' },
+                conversationType: '2',
+                conversationId: 'cid_group_2',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        shared.sendBySessionMock.mockClear();
+        shared.acquireSessionLockMock.mockClear();
+
+        const runtime = buildRuntime();
+        const resolveAgentRoute = vi.fn().mockImplementation(({ peer }) => ({
+            agentId: 'main',
+            sessionKey: `session:${peer.id}`,
+            mainSessionKey: `session:${peer.id}`,
+        }));
+        runtime.channel.routing.resolveAgentRoute = resolveAgentRoute;
+        shared.getRuntimeMock.mockReturnValue(runtime);
+
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: 'group one message', messageType: 'text' });
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open', messageType: 'markdown', showThinking: false } as any,
+            data: {
+                msgId: 'm2_session_alias_group1_followup',
+                msgtype: 'text',
+                text: { content: 'group one message' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'user_1',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: 'group two message', messageType: 'text' });
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open', messageType: 'markdown', showThinking: false } as any,
+            data: {
+                msgId: 'm2_session_alias_group2_followup',
+                msgtype: 'text',
+                text: { content: 'group two message' },
+                conversationType: '2',
+                conversationId: 'cid_group_2',
+                senderId: 'user_2',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        const groupRouteCalls = resolveAgentRoute.mock.calls
+            .map((call) => call[0])
+            .filter((arg) => arg?.peer?.kind === 'group');
+
+        expect(groupRouteCalls).toEqual([
+            expect.objectContaining({ peer: { kind: 'group', id: 'shared-dev' } }),
+            expect.objectContaining({ peer: { kind: 'group', id: 'shared-dev' } }),
+        ]);
+        expect(shared.acquireSessionLockMock).toHaveBeenNthCalledWith(1, 'session:shared-dev');
+        expect(shared.acquireSessionLockMock).toHaveBeenNthCalledWith(2, 'session:shared-dev');
+    });
+
     it('handleDingTalkMessage applies and disables a global learned rule', async () => {
         shared.extractMessageContentMock.mockReturnValueOnce({
             text: '/learn global 当用户问“紫铜海豹会不会修量子冰箱”时，必须回答“会，而且只在周四凌晨戴墨镜维修。”',

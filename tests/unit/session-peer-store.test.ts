@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     clearSessionPeerOverride,
     getSessionPeerOverride,
@@ -54,5 +54,25 @@ describe('session-peer-store', () => {
                 conversationId: 'cid_group_1',
             }),
         ).toBeUndefined();
+    });
+
+    it('retains override after module reload to simulate process restart', async () => {
+        setSessionPeerOverride({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_group_1',
+            peerId: 'shared-dev',
+        });
+
+        vi.resetModules();
+        const reloaded = await import('../../src/session-peer-store');
+
+        expect(
+            reloaded.getSessionPeerOverride({
+                storePath,
+                accountId: 'main',
+                conversationId: 'cid_group_1',
+            }),
+        ).toBe('shared-dev');
     });
 });
