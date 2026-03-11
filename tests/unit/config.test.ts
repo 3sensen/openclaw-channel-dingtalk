@@ -88,6 +88,13 @@ describe('config helpers', () => {
         });
 
         describe('Windows absolute paths', () => {
+            beforeEach(() => {
+                Object.defineProperty(process, 'platform', {
+                    configurable: true,
+                    value: 'win32',
+                });
+            });
+
             it('resolves Windows path with drive letter and backslash', () => {
                 const result = resolveRelativePath('C:\\Users\\test\\file.txt');
                 expect(result).toMatch(/^[A-Z]:\\/); // Has drive letter and absolute path

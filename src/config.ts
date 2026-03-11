@@ -3,8 +3,39 @@ import * as path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type { DingTalkConfig } from "./types";
 
+const WINDOWS_ROOT_DIRECTORIES = new Set([
+  "Users",
+  "Program Files",
+  "Program Files (x86)",
+  "ProgramData",
+  "Windows",
+  "Documents and Settings",
+]);
+
+/**
+ * Merge channel-level defaults into an account-specific config.
+ * Account-level values take precedence; `accounts` key is excluded to avoid recursion.
+ */
+export function mergeAccountWithDefaults(
+  channelCfg: DingTalkConfig,
+  accountCfg: DingTalkConfig,
+): DingTalkConfig {
+  const { accounts: _accounts, ...defaults } = channelCfg;
+  const overrides: Partial<DingTalkConfig> = {};
+  for (const [key, value] of Object.entries(accountCfg)) {
+    if (value !== undefined) {
+      Object.assign(overrides, { [key]: value });
+    }
+  }
+  return {
+    ...defaults,
+    ...overrides,
+  };
+}
+
 /**
  * Resolve DingTalk config for an account.
+ * Named accounts inherit channel-level defaults with account-level overrides.
  * Falls back to top-level config for single-account setups.
  */
 export function getConfig(cfg: OpenClawConfig, accountId?: string): DingTalkConfig {
@@ -14,7 +45,7 @@ export function getConfig(cfg: OpenClawConfig, accountId?: string): DingTalkConf
   }
 
   if (accountId && dingtalkCfg.accounts?.[accountId]) {
-    return dingtalkCfg.accounts[accountId];
+    return mergeAccountWithDefaults(dingtalkCfg, dingtalkCfg.accounts[accountId]);
   }
 
   return dingtalkCfg;
@@ -45,6 +76,8 @@ export function resolveRelativePath(input: string): string {
   }
 
   const segments = (value: string): string[] => value.split(/[\\/]+/).filter(Boolean);
+  const pathSegments = segments(trimmed);
+  const firstSegment = pathSegments[0];
 
   // Expand bare "~" and "~/" or "~\\" prefixes into the user home directory.
   if (trimmed === "~") {
@@ -54,45 +87,20 @@ export function resolveRelativePath(input: string): string {
     return path.resolve(os.homedir(), ...segments(trimmed.slice(2)));
   }
 
-  // Check for Windows absolute paths with drive letters (e.g., "C:\path" or "C:/path")
-  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
-    return path.resolve(trimmed);
-  }
-
-  // Get path segments for further analysis
-  const pathSegments = segments(trimmed);
-  const firstSegment = pathSegments[0];
-
-  /**
-   * Windows platform compatibility fix:
-   * Detect Windows absolute paths that are missing the leading backslash
-   * and/or drive letter. OpenClaw sometimes strips leading backslashes from
-   * Windows paths, causing patterns like "Users\username\.openclaw\workspace\file.xlsx"
-   * to be treated as relative paths.
-   *
-   * Pattern detection:
-   * - First segment starts with a letter (directory name like "Users")
-   * - Path has multiple segments (> 2)
-   * - Second segment contains a dot (like ".openclaw", ".config")
-   *
-   * This pattern reliably indicates an absolute Windows path from root.
-   */
-  if (firstSegment && /^[a-zA-Z]/.test(firstSegment) && pathSegments.length > 2) {
-    const secondSegment = pathSegments[1];
-    if (secondSegment && secondSegment.includes('.')) {
-      // Reconstruct as absolute path from root
-      return path.resolve(path.sep, ...pathSegments);
+  if (process.platform === "win32") {
+    // On Windows, OpenClaw may drop the leading "\" from root-based paths like
+    // "Users\name\.openclaw\workspace\file.xlsx". Only recover paths that start
+    // with well-known root directories to avoid misclassifying ordinary relative paths.
+    if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+      return path.win32.normalize(trimmed);
+    }
+    if (firstSegment && /^[a-zA-Z]:$/.test(firstSegment)) {
+      return path.win32.resolve(`${firstSegment}\\`, ...pathSegments.slice(1));
+    }
+    if (firstSegment && WINDOWS_ROOT_DIRECTORIES.has(firstSegment)) {
+      return path.win32.resolve("\\", ...pathSegments);
     }
   }
-
-  /**
-   * Handle edge case: Windows paths with drive letter but no separator
-   * e.g., "C:Users\..." (missing backslash after drive letter)
-   */
-  if (firstSegment && /^[a-zA-Z]:$/.test(firstSegment)) {
-    return path.resolve(firstSegment + path.sep, ...pathSegments.slice(1));
-  }
-
   // Treat both "/" and "\\" as absolute root prefixes for cross-platform input.
   if (/^[\\/]/.test(trimmed)) {
     return path.resolve(path.sep, ...pathSegments);
