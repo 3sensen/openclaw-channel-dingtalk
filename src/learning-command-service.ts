@@ -15,9 +15,6 @@ export interface ParsedLearnCommand {
     | "whoami"
     | "whereami"
     | "owner-status"
-    | "session-alias-show"
-    | "session-alias-set"
-    | "session-alias-clear"
     | "target-set-create"
     | "target-set-apply"
     | "unknown";
@@ -26,11 +23,9 @@ export interface ParsedLearnCommand {
   targetId?: string;
   targetIds?: string[];
   setName?: string;
-  peerId?: string;
 }
 
 const TARGET_DELIMITER = "#@#";
-const SESSION_ALIAS_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export function parseLearnCommand(text: string | undefined): ParsedLearnCommand {
   const raw = String(text || "").trim();
@@ -38,20 +33,6 @@ export function parseLearnCommand(text: string | undefined): ParsedLearnCommand 
     return { scope: "unknown" };
   }
   const normalized = raw.toLowerCase();
-  const sessionAliasMatch = raw.match(/^\/session-alias\s+(show|clear|set)(?:\s+(.+))?$/i);
-  if (sessionAliasMatch) {
-    const action = sessionAliasMatch[1]?.toLowerCase();
-    const rawPeerId = sessionAliasMatch[2]?.trim();
-    if (action === "show") {
-      return { scope: "session-alias-show" };
-    }
-    if (action === "clear") {
-      return { scope: "session-alias-clear" };
-    }
-    if (action === "set") {
-      return rawPeerId ? { scope: "session-alias-set", peerId: rawPeerId } : { scope: "unknown" };
-    }
-  }
   if (
     normalized === "/learn help"
   ) {
@@ -233,9 +214,6 @@ export function formatLearnCommandHelp(): string {
     "- /learn whoami：查看当前 senderId",
     "- /learn owner status：查看当前 owner 权限状态",
     "- /learn whereami：查看当前会话/群 ID",
-    "- /session-alias show：查看当前群共享会话别名",
-    "- /session-alias set <alias>：将当前群绑定到指定共享会话别名",
-    "- /session-alias clear：清除当前群共享会话别名，恢复为 conversationId",
     "- /learn global <规则>：发布到当前钉钉账号下所有会话",
     "- /learn session <规则>：仅发布到当前私聊会话",
     "- /learn here #@# <规则>：发布到当前群/当前私聊",
@@ -247,69 +225,14 @@ export function formatLearnCommandHelp(): string {
     "- /learn disable <ruleId>：停用一条规则，停止继续命中，但保留记录",
     "- /learn delete <ruleId>：彻底删除一条规则或目标规则",
     "",
+    "可用的 owner 会话控制命令：",
+    "- /session-alias show：查看当前群共享会话别名",
+    "- /session-alias set <alias>：将当前群绑定到指定共享会话别名",
+    "- /session-alias clear：清除当前群共享会话别名，恢复为 conversationId",
+    "",
     "权限说明：",
     "- 只有 owner 才能真正执行 /learn 的写操作和控制操作。",
     "- 如果你现在不是 owner，也可以先用 `/learn whoami` 查看 senderId，再由宿主把它加入 commands.ownerAllowFrom。",
-  ].join("\n");
-}
-
-export function formatSessionAliasReply(params: {
-  conversationId: string;
-  peerId: string;
-  aliasSource: "default" | "override";
-}): string {
-  return [
-    "当前群会话别名：",
-    "",
-    `- conversationId: \`${params.conversationId}\``,
-    `- peerId: \`${params.peerId}\``,
-    `- mode: \`${params.aliasSource}\``,
-  ].join("\n");
-}
-
-export function formatSessionAliasSetReply(params: {
-  conversationId: string;
-  peerId: string;
-}): string {
-  return [
-    "已更新当前群共享会话别名。",
-    "",
-    `- conversationId: \`${params.conversationId}\``,
-    `- peerId: \`${params.peerId}\``,
-    "",
-    "将其他群也设置为同一个 peerId 后，这些群会共用同一条会话。",
-  ].join("\n");
-}
-
-export function validateSessionAlias(peerId: string | undefined): string | null {
-  const value = String(peerId || "").trim();
-  if (!value) {
-    return "共享会话别名不能为空。";
-  }
-  if (!SESSION_ALIAS_PATTERN.test(value)) {
-    return "共享会话别名仅允许 [a-zA-Z0-9_-]{1,64}。";
-  }
-  return null;
-}
-
-export function formatSessionAliasValidationErrorReply(error: string): string {
-  return [
-    "共享会话别名不合法。",
-    "",
-    `- 原因：${error}`,
-    "- 允许规则：`[a-zA-Z0-9_-]{1,64}`",
-    "- 示例：`shared-dev`、`ops_shared`",
-  ].join("\n");
-}
-
-export function formatSessionAliasClearedReply(params: {
-  conversationId: string;
-}): string {
-  return [
-    "已清除当前群共享会话别名。",
-    "",
-    `- conversationId: \`${params.conversationId}\``,
-    "- peerId: 恢复为当前 conversationId",
   ].join("\n");
 }
 

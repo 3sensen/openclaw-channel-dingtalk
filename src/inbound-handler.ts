@@ -20,16 +20,11 @@ import {
   formatLearnListReply,
   formatOwnerOnlyDeniedReply,
   formatOwnerStatusReply,
-  formatSessionAliasClearedReply,
-  formatSessionAliasReply,
-  formatSessionAliasSetReply,
-  formatSessionAliasValidationErrorReply,
   formatTargetSetSavedReply,
   formatWhereAmIReply,
   formatWhoAmIReply,
   isLearningOwner,
   parseLearnCommand,
-  validateSessionAlias,
 } from "./learning-command-service";
 import { extractMessageContent } from "./message-utils";
 import { registerPeerId } from "./peer-id-registry";
@@ -47,6 +42,14 @@ import { acquireSessionLock } from "./session-lock";
 import { cacheInboundDownloadCode, getCachedDownloadCode } from "./quoted-msg-cache";
 import { downloadGroupFile, getUnionIdByStaffId, resolveQuotedFile } from "./quoted-file-service";
 import classifySentenceWithEmoji from "./classifyWithEmoji";
+import {
+  formatSessionAliasClearedReply,
+  formatSessionAliasReply,
+  formatSessionAliasSetReply,
+  formatSessionAliasValidationErrorReply,
+  parseSessionCommand,
+  validateSessionAlias,
+} from "./session-command-service";
 import {
   applyManualTargetLearningRule,
   applyManualTargetsLearningRule,
@@ -384,6 +387,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
   const to = isDirect ? senderId : groupId;
   const parsedLearnCommand = parseLearnCommand(content.text);
+  const parsedSessionCommand = parseSessionCommand(content.text);
   const isOwner = isLearningOwner({
     cfg,
     config: dingtalkConfig,
@@ -434,19 +438,6 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     await sendBySession(dingtalkConfig, sessionWebhook, formatLearnCommandHelp(), { log });
     return;
   }
-  if (!isDirect && parsedLearnCommand.scope === "session-alias-show") {
-    await sendBySession(
-      dingtalkConfig,
-      sessionWebhook,
-      formatSessionAliasReply({
-        conversationId: data.conversationId,
-        peerId: sessionPeer.peerId,
-        aliasSource: peerIdOverride ? "override" : "default",
-      }),
-      { log },
-    );
-    return;
-  }
   if (
     (parsedLearnCommand.scope === "global"
       || parsedLearnCommand.scope === "session"
@@ -456,18 +447,32 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       || parsedLearnCommand.scope === "list"
       || parsedLearnCommand.scope === "disable"
       || parsedLearnCommand.scope === "delete"
-      || parsedLearnCommand.scope === "session-alias-set"
-      || parsedLearnCommand.scope === "session-alias-clear"
       || parsedLearnCommand.scope === "target-set-create"
-      || parsedLearnCommand.scope === "target-set-apply")
+      || parsedLearnCommand.scope === "target-set-apply"
+      || parsedSessionCommand.scope === "session-alias-show"
+      || parsedSessionCommand.scope === "session-alias-set"
+      || parsedSessionCommand.scope === "session-alias-clear")
     && !isOwner
   ) {
     await sendBySession(dingtalkConfig, sessionWebhook, formatOwnerOnlyDeniedReply(), { log });
     return;
   }
   if (isOwner) {
-    if (!isDirect && parsedLearnCommand.scope === "session-alias-set" && parsedLearnCommand.peerId) {
-      const aliasValidationError = validateSessionAlias(parsedLearnCommand.peerId);
+    if (!isDirect && parsedSessionCommand.scope === "session-alias-show") {
+      await sendBySession(
+        dingtalkConfig,
+        sessionWebhook,
+        formatSessionAliasReply({
+          conversationId: data.conversationId,
+          peerId: sessionPeer.peerId,
+          aliasSource: peerIdOverride ? "override" : "default",
+        }),
+        { log },
+      );
+      return;
+    }
+    if (!isDirect && parsedSessionCommand.scope === "session-alias-set" && parsedSessionCommand.peerId) {
+      const aliasValidationError = validateSessionAlias(parsedSessionCommand.peerId);
       if (aliasValidationError) {
         await sendBySession(
           dingtalkConfig,
@@ -481,20 +486,20 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         storePath: accountStorePath,
         accountId,
         conversationId: data.conversationId,
-        peerId: parsedLearnCommand.peerId,
+        peerId: parsedSessionCommand.peerId,
       });
       await sendBySession(
         dingtalkConfig,
         sessionWebhook,
         formatSessionAliasSetReply({
           conversationId: data.conversationId,
-          peerId: parsedLearnCommand.peerId,
+          peerId: parsedSessionCommand.peerId,
         }),
         { log },
       );
       return;
     }
-    if (!isDirect && parsedLearnCommand.scope === "session-alias-clear") {
+    if (!isDirect && parsedSessionCommand.scope === "session-alias-clear") {
       clearSessionPeerOverride({
         storePath: accountStorePath,
         accountId,

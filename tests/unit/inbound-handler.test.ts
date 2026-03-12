@@ -507,6 +507,59 @@ describe('inbound-handler', () => {
         expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('peerId: `cid_group_1`');
     });
 
+    it('handleDingTalkMessage blocks session alias show for non-owner in group', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias show', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_show_deny',
+                msgtype: 'text',
+                text: { content: '/session-alias show' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'user_not_owner',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('仅允许 owner 使用');
+    });
+
+    it('handleDingTalkMessage lets owner show current shared session alias for group', async () => {
+        shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias show', messageType: 'text' });
+
+        await handleDingTalkMessage({
+            cfg: { commands: { ownerAllowFrom: ['dingtalk:owner-test-id'] } },
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { groupPolicy: 'open' } as any,
+            data: {
+                msgId: 'm2_session_alias_show_owner',
+                msgtype: 'text',
+                text: { content: '/session-alias show' },
+                conversationType: '2',
+                conversationId: 'cid_group_1',
+                senderId: 'owner-test-id',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('conversationId: `cid_group_1`');
+        expect(shared.sendBySessionMock.mock.calls[0]?.[2]).toContain('peerId: `cid_group_1`');
+    });
+
     it('handleDingTalkMessage lets owner set a shared session alias for current group', async () => {
         shared.extractMessageContentMock.mockReturnValueOnce({ text: '/session-alias set shared-dev', messageType: 'text' });
 
