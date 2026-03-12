@@ -135,7 +135,27 @@ function stripQuotedPrefixForJournal(value: string): string {
     .replace(/^\[这是一条引用消息，原消息ID: .*?\]\n\n/s, "")
     .trim();
 }
+function sanitizeGroupPromptName(value?: string): string {
+  return (value || "")
+    .replace(/[\r\n,=]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+function buildGroupTurnContextPrompt(params: {
+  conversationId: string;
+  senderDingtalkId: string;
+  senderName?: string;
+}): string {
+  const sanitizedSenderName = sanitizeGroupPromptName(params.senderName) || "Unknown";
+  return [
+    "Current DingTalk group turn context:",
+    `- conversationId: ${params.conversationId}`,
+    `- senderDingtalkId: ${params.senderDingtalkId}`,
+    `- senderName: ${sanitizedSenderName}`,
+    "Treat senderDingtalkId and senderName as the authoritative sender for this turn. Do not guess the current sender from GroupMembers.",
+  ].join("\n");
+}
 /**
  * Download DingTalk media file via runtime media service (sandbox-compatible).
  * Files are stored in the global media inbound directory.
@@ -997,9 +1017,15 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   });
 
   const groupConfig = !isDirect ? resolveGroupConfig(dingtalkConfig, groupId) : undefined;
-  // GroupSystemPrompt is injected every turn (not only first-turn intro).
   const groupSystemPromptParts = !isDirect
-    ? [`DingTalk group context: conversationId=${groupId}`, groupConfig?.systemPrompt?.trim()]
+    ? [
+        buildGroupTurnContextPrompt({
+          conversationId: groupId,
+          senderDingtalkId: senderId,
+          senderName,
+        }),
+        groupConfig?.systemPrompt?.trim(),
+      ]
     : [];
   const extraSystemPrompt =
     [...groupSystemPromptParts, learningContextBlock].filter(Boolean).join("\n\n") || undefined;
@@ -1109,9 +1135,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         cfg,
         dispatcherOptions: {
           responsePrefix: "",
-          deliver: async (payload: any, info?: { kind: string }) => {
+          deliver: async (payload, info) => {
             try {
-              const textToSend = payload.markdown || payload.text;
+              const textToSend = payload.text;
               if (!textToSend) {
                 return;
               }
@@ -1123,12 +1149,12 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
                 return;
               }
 
-              if (useCardMode && currentAICard && info?.kind === "final") {
+              if (useCardMode && currentAICard && info.kind === "final") {
                 lastCardContent = textToSend;
                 return;
               }
 
-              if (useCardMode && currentAICard && info?.kind === "tool") {
+              if (useCardMode && currentAICard && info.kind === "tool") {
                 if (isCardInTerminalState(currentAICard.state)) {
                   log?.debug?.(
                     `[DingTalk] Skipping tool stream update because card is terminal: state=${currentAICard.state}`,
@@ -1184,7 +1210,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           },
         },
         replyOptions: {
-          onReasoningStream: async (payload: any) => {
+          onReasoningStream: async (payload) => {
             if (!useCardMode || !currentAICard) {
               return;
             }
@@ -1207,7 +1233,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
                 accountId,
                 storePath,
                 conversationId: groupId,
-                cardUpdateMode: "append",
+                cardUpdateMode: "replace",
               });
               if (!sendResult.ok) {
                 throw new Error(sendResult.error || "Thinking stream send failed");

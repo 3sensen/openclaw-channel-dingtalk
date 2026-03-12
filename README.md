@@ -23,6 +23,7 @@
 - ✅ **多种消息类型** — 文本、图片、语音（自带识别）、视频、文件、钉钉文档/钉盘文件卡片
 - ✅ **引用消息支持** — 支持恢复大多数引用场景（文字/图片/图文/文件/视频/语音/AI 卡片）；单聊中的钉钉文档依赖权限 **Storage.DownloadInfo.Read**；群聊支持引用群图片、文件/文档（优先命中已持久化索引，未命中时走群文件 API 兜底），其中群文件相关能力需 **ConvFile.Space.Read**、**Storage.File.Read**、**Storage.DownloadInfo.Read**、**Contact.User.Read**，且兜底链路受时间窗口与企业认证限制
 - ✅ **Markdown 回复** — 支持富文本格式回复
+- ✅ **Markdown 表格兼容** — 自动把 Markdown 表格转换为钉钉更稳定的可读文本
 - ✅ **互动卡片** — 支持流式更新，适用于 AI 实时输出
 - ✅ **完整 AI 对话** — 接入 Clawdbot 消息处理管道
 
@@ -51,15 +52,39 @@ openclaw plugins install @soimy/dingtalk
 如果你想对插件进行二次开发，可以先克隆仓库：
 
 ```bash
-# 1. 克隆仓库
+# 1. 在父仓库外单独克隆插件仓库（推荐）
 git clone https://github.com/soimy/openclaw-channel-dingtalk.git
 cd openclaw-channel-dingtalk
 
 # 2. 安装依赖 (必需)
 npm install
 
-# 3. 以链接模式安装 (方便修改代码后实时生效)
+# 3. 用全局 OpenClaw 以链接模式安装 (方便修改代码后实时生效)
 openclaw plugins install -l .
+```
+
+推荐的本地开发布局：
+
+```text
+~/Repo/openclaw                    # 仅用于阅读源码、跳转 plugin-sdk、研究内部链路
+~/Repo/openclaw-channel-dingtalk   # 插件主开发仓库
+~/.openclaw/extensions/...         # 由 openclaw plugins install -l 管理的运行时链接
+```
+
+这种布局比“把插件放在 `openclaw/extensions/` 里再单独开 worktree”更稳定，原因是：
+
+- 避免 submodule / worktree 的 gitdir 指向混乱
+- 插件仓库可以独立切分支、开 worktree、做实验
+- 运行时和源码阅读环境彻底解耦
+
+如果你的本地 `openclaw` 仓库位于 `~/Repo/openclaw`，而插件仓库位于 `~/Repo/openclaw-channel-dingtalk`，本仓库当前的 `tsconfig.json` 已兼容这种目录结构，会优先解析父仓库源码中的 `src/plugin-sdk`，在源码不存在时再回退到 `dist/plugin-sdk` 类型产物。
+
+如果你此前是把插件作为 `~/Repo/openclaw/extensions/openclaw-channel-dingtalk` 下的 submodule 使用，建议迁移为独立仓库后再执行：
+
+```bash
+cd ~/Repo/openclaw-channel-dingtalk
+openclaw plugins install -l .
+openclaw gateway restart
 ```
 
 ### 方法 C：手动安装
@@ -180,6 +205,8 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 git pull
 openclaw gateway restart
 ```
+
+如果你采用推荐的独立仓库布局，更新插件代码时不需要改动本地 `~/Repo/openclaw` 仓库；后者仅用于代码解析和内部实现研究。
 
 ## 配置
 
@@ -648,6 +675,8 @@ node scripts/feedback-learning-debug.mjs --storePath /path/to/session-store.json
 > 当前**不支持图片的图文混排**。也就是说，Markdown 消息和 AI 互动卡片目前都只能发送文本内容，不能在同一条消息中同时内嵌图片。
 > 如果需要发送图片，请单独调用 `outbound.sendMedia(...)` 或 `sendProactiveMedia(...)`。
 > 无论是**本地图片路径**还是**远程 HTTP(S) 图片 URL**，都支持单独发送；远程图片会先下载到临时文件，再上传到钉钉后发送。
+
+> 发送 Markdown 时，如果内容中包含标准 Markdown 表格，插件会先把分隔行转换掉，保留为钉钉更稳定的纯文本表格展示，避免表格语法在客户端里显示异常。
 > 远程 URL 下载默认限制为：**10 秒超时**、**20MB 上限**，并拒绝 `localhost` / 内网地址（如 `127.0.0.1`、`10.x.x.x`、`192.168.x.x`、`172.16-31.x.x`）以降低 SSRF 风险。
 > 如需从受控内网媒体服务下载，请配置 `mediaUrlAllowlist`（例如 `192.168.1.23`、`files.internal.example`、`10.0.0.0/8`）；配置后仅白名单主机可下载。
 > 远程域名会先做 DNS 解析并校验解析结果；若解析到内网/本地地址且未被白名单明确允许，将在下载前拒绝。
