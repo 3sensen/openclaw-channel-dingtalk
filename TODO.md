@@ -4,6 +4,41 @@
 
 ---
 
+## Daily Sync (2026-03-12)
+
+### 新增 Issue 对齐（最近 24h）
+
+- 已完成标签补齐：
+  - `bug`: [#318](https://github.com/soimy/openclaw-channel-dingtalk/issues/318), [#319](https://github.com/soimy/openclaw-channel-dingtalk/issues/319), [#321](https://github.com/soimy/openclaw-channel-dingtalk/issues/321), [#302](https://github.com/soimy/openclaw-channel-dingtalk/issues/302), [#290](https://github.com/soimy/openclaw-channel-dingtalk/issues/290)
+  - `feature request`: [#310](https://github.com/soimy/openclaw-channel-dingtalk/issues/310), [#312](https://github.com/soimy/openclaw-channel-dingtalk/issues/312)
+  - `Q&A`: [#243](https://github.com/soimy/openclaw-channel-dingtalk/issues/243), [#303](https://github.com/soimy/openclaw-channel-dingtalk/issues/303), [#304](https://github.com/soimy/openclaw-channel-dingtalk/issues/304)
+- 已按现有 TODO 归并并回复 `Dup #...`：
+  - [#288](https://github.com/soimy/openclaw-channel-dingtalk/issues/288) → `Dup #67`（群聊 @ 诉求）
+  - [#305](https://github.com/soimy/openclaw-channel-dingtalk/issues/305) → `Dup #67`（群聊 @ 诉求）
+  - [#306](https://github.com/soimy/openclaw-channel-dingtalk/issues/306) → `Dup #162`（图片发送链路）
+  - [#316](https://github.com/soimy/openclaw-channel-dingtalk/issues/316) → `Dup #162`（图片发送链路）
+  - [#315](https://github.com/soimy/openclaw-channel-dingtalk/issues/315) → `Dup #207`（文件链路）
+  - [#320](https://github.com/soimy/openclaw-channel-dingtalk/issues/320) → `Dup #236`（thinking/reasoning 展示）
+
+### 新增 PR 审阅同步（最近 24h）
+
+- 已完成本轮 review 并回帖：
+  - [#307](https://github.com/soimy/openclaw-channel-dingtalk/pull/307): `mergeable=CONFLICTING`，建议先解冲突并补文档/回归测试
+  - [#311](https://github.com/soimy/openclaw-channel-dingtalk/pull/311): 修复方向正确，建议补测试后优先合并（当前有冲突）
+  - [#313](https://github.com/soimy/openclaw-channel-dingtalk/pull/313): 可合并，但建议补 sessions 异常场景测试
+  - [#314](https://github.com/soimy/openclaw-channel-dingtalk/pull/314): Request Changes（功能与 fork 发布改动混杂，建议拆 PR）
+  - [#317](https://github.com/soimy/openclaw-channel-dingtalk/pull/317): Request Changes（架构边界与冲突待收敛）
+
+### 今日增量结论
+
+- P0/P1 影响最大的新 bug：
+  - [#319](https://github.com/soimy/openclaw-channel-dingtalk/issues/319) `sessionWebhook` 过期无 fallback，长任务静默丢回复
+  - [#321](https://github.com/soimy/openclaw-channel-dingtalk/issues/321) `deliver` 以空文本短路，导致媒体附带说明丢失
+  - [#318](https://github.com/soimy/openclaw-channel-dingtalk/issues/318) AI Card 流式触发 `card.stream` 限流
+- 建议下一步：优先推进 `#311 + #313`（可直接降低线上失败率），并为 `#319/#321` 补单测与集成回归。
+
+---
+
 ## P0
 
 ### 1. 消息接收稳定性 / 长时间待机可靠性
