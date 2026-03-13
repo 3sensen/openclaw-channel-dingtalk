@@ -45,6 +45,8 @@ export interface DingTalkConfig extends OpenClawConfig {
   journalTTLDays?: number;
   showThinking?: boolean;
   thinkingMessage?: string;
+  asyncMode?: boolean;
+  asyncAckText?: string;
   debug?: boolean;
   messageType?: "markdown" | "card";
   cardTemplateId?: string;
@@ -106,6 +108,8 @@ export interface DingTalkChannelConfig {
   journalTTLDays?: number;
   showThinking?: boolean;
   thinkingMessage?: string;
+  asyncMode?: boolean;
+  asyncAckText?: string;
   debug?: boolean;
   messageType?: "markdown" | "card";
   cardTemplateId?: string;
