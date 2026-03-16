@@ -2654,6 +2654,11 @@ describe('inbound-handler', () => {
                     openMsgId: 'm5_global_ackreaction',
                     openConversationId: 'cid_ok',
                     emotionName: '👀',
+                    textEmotion: expect.objectContaining({
+                        emotionId: '2659900',
+                        emotionName: '👀',
+                        text: '👀',
+                    }),
                 }),
                 expect.any(Object),
             );
@@ -2707,6 +2712,11 @@ describe('inbound-handler', () => {
                     openMsgId: 'm5_identity_ackreaction',
                     openConversationId: 'cid_ok',
                     emotionName: '👀',
+                    textEmotion: expect.objectContaining({
+                        emotionId: '2659900',
+                        emotionName: '👀',
+                        text: '👀',
+                    }),
                 }),
                 expect.any(Object),
             );

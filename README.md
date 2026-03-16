@@ -432,7 +432,7 @@ openclaw gateway restart
 
 ### 钉钉原生“思考中”表情反馈
 
-当 `ackReaction` 为非空字符串时，插件会在处理开始时给用户原消息添加一条钉钉原生“🤔思考中”表情反馈，并在处理结束后自动撤回。该增强不会阻断主流程：贴表情或撤表情失败时只记录日志，仍继续正常回复。
+当 `ackReaction` 为非空字符串时，插件会在处理开始时给用户原消息添加一条钉钉原生文本表情反馈，并在处理结束后自动撤回。该增强不会阻断主流程：贴表情或撤表情失败时只记录日志，仍继续正常回复。
 
 > 设计/实现参考自 `DingTalk-Real-AI/dingtalk-openclaw-connector`（MIT）：
 > <https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector>
@@ -443,7 +443,8 @@ openclaw gateway restart
 - 该反馈作用于用户原消息，不会额外发送一条“思考中”消息
 - 解析顺序与官方一致：`channels.dingtalk.accounts.<accountId>.ackReaction` -> `channels.dingtalk.ackReaction` -> `messages.ackReaction` -> `agents.list[].identity.emoji`
 - 若上述路径都未配置，则不发送 ack reaction
-- 当前钉钉实现底层走 `emotion/reply` / `emotion/recall` 的原生“思考中”反馈流；该接口不支持任意颜文字文本
+- 当前钉钉实现底层走 `emotion/reply` / `emotion/recall`，会把解析出的 `ackReaction` 文本原样写入 `emotionName` / `textEmotion.emotionName`
+- 若配置值为 `🤔思考中`，效果与钉钉原生“思考中”反馈一致；配置为其他文本时，会按该文本发送对应的 ack reaction
 
 ### 连接鲁棒性配置
 
