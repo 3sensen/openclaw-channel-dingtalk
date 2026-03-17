@@ -35,9 +35,52 @@ const CARD_STATE_FILE_VERSION = 1;
 const CARD_PENDING_NAMESPACE = "cards.active.pending";
 const RECOVERY_FINALIZE_MESSAGE = "⚠️ 上一次回复处理中断，已自动结束。请重新发送你的问题。";
 const AICARD_DEGRADE_DEFAULT_MS = 30 * 60 * 1000;
+const CARD_CACHE_MAX_PER_CONVERSATION = 20;
+const CARD_CACHE_MAX_CONVERSATIONS = 500;
 
 const aicardDegradeByAccount = new Map<string, { untilMs: number; reason: string }>();
-const inMemoryCardContentStore = new Map<string, Array<{ content: string; createdAt: number; expiresAt: number }>>();
+const inMemoryCardContentStore = new Map<
+  string,
+  {
+    entries: Array<{ content: string; createdAt: number; expiresAt: number }>;
+    lastActiveAt: number;
+  }
+>();
+
+function pruneInMemoryCardContentEntries(
+  entries: Array<{ content: string; createdAt: number; expiresAt: number }>,
+  nowMs: number,
+): Array<{ content: string; createdAt: number; expiresAt: number }> {
+  return entries.filter((entry) => nowMs < entry.expiresAt).slice(-CARD_CACHE_MAX_PER_CONVERSATION);
+}
+
+function touchInMemoryCardContentBucket(scopeKey: string, nowMs: number): {
+  entries: Array<{ content: string; createdAt: number; expiresAt: number }>;
+  lastActiveAt: number;
+} {
+  const existing = inMemoryCardContentStore.get(scopeKey);
+  const bucket = existing
+    ? {
+        entries: pruneInMemoryCardContentEntries(existing.entries, nowMs),
+        lastActiveAt: nowMs,
+      }
+    : { entries: [], lastActiveAt: nowMs };
+  inMemoryCardContentStore.set(scopeKey, bucket);
+  if (inMemoryCardContentStore.size > CARD_CACHE_MAX_CONVERSATIONS) {
+    let oldestKey: string | undefined;
+    let oldestTime = Infinity;
+    for (const [key, candidate] of inMemoryCardContentStore) {
+      if (candidate.lastActiveAt < oldestTime) {
+        oldestTime = candidate.lastActiveAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) {
+      inMemoryCardContentStore.delete(oldestKey);
+    }
+  }
+  return bucket;
+}
 
 function getAICardDegradeMs(config?: DingTalkConfig): number {
   const raw = config?.aicardDegradeMs;
@@ -865,9 +908,10 @@ export function cacheCardContent(
   if (!storePath) {
     const scopeKey = `${accountId}:${conversationId}`;
     const nowMs = Date.now();
-    const entries = (inMemoryCardContentStore.get(scopeKey) || []).filter((entry) => nowMs < entry.expiresAt);
-    entries.push({ content, createdAt, expiresAt: nowMs + DEFAULT_CARD_CONTENT_TTL_MS });
-    inMemoryCardContentStore.set(scopeKey, entries);
+    const bucket = touchInMemoryCardContentBucket(scopeKey, nowMs);
+    bucket.entries.push({ content, createdAt, expiresAt: nowMs + DEFAULT_CARD_CONTENT_TTL_MS });
+    bucket.entries.sort((left, right) => left.createdAt - right.createdAt);
+    bucket.entries = bucket.entries.slice(-CARD_CACHE_MAX_PER_CONVERSATION);
     return;
   }
   upsertCreatedAtFallbackMessageContext({
@@ -890,13 +934,20 @@ export function findCardContent(
 ): string | null {
   if (!storePath) {
     const scopeKey = `${accountId}:${conversationId}`;
-    const entries = inMemoryCardContentStore.get(scopeKey) || [];
+    const nowMs = Date.now();
+    const bucket = inMemoryCardContentStore.get(scopeKey);
+    if (!bucket) {
+      return null;
+    }
+    bucket.entries = pruneInMemoryCardContentEntries(bucket.entries, nowMs);
+    bucket.lastActiveAt = nowMs;
+    if (bucket.entries.length === 0) {
+      inMemoryCardContentStore.delete(scopeKey);
+      return null;
+    }
     let bestContent: string | null = null;
     let bestDelta = Infinity;
-    for (const entry of entries) {
-      if (Date.now() >= entry.expiresAt) {
-        continue;
-      }
+    for (const entry of bucket.entries) {
       const delta = Math.abs(entry.createdAt - repliedCreatedAt);
       if (delta <= DEFAULT_CREATED_AT_MATCH_WINDOW_MS && delta < bestDelta) {
         bestDelta = delta;

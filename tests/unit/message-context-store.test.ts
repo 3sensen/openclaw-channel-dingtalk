@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+    cleanupMessageContextsByCreatedAt,
     cleanupExpiredMessageContexts,
     clearMessageContextCacheForTest,
     resolveByAlias,
@@ -11,9 +12,11 @@ import {
     resolveQuotedCardByProcessQueryKey,
     resolveQuotedMediaByMsgId,
     resolveQuotedTextByMsgId,
+    upsertCreatedAtFallbackMessageContext,
     upsertInboundMessageContext,
     upsertOutboundMessageContext,
 } from '../../src/message-context-store';
+import { resolveNamespacePath } from '../../src/persistence-store';
 
 describe('message-context-store', () => {
     let tempDir = '';
@@ -154,5 +157,77 @@ describe('message-context-store', () => {
             processQueryKey: 'carrier_expire',
             nowMs: 5001,
         })).toBeNull();
+    });
+
+    it('uses caller-provided nowMs when cleaning by createdAt', () => {
+        upsertInboundMessageContext({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_4',
+            msgId: 'msg_clock_bound',
+            createdAt: 1000,
+            updatedAt: 1000,
+            messageType: 'text',
+            text: 'clock-safe',
+            ttlMs: 10_000,
+            topic: null,
+        });
+
+        const removed = cleanupMessageContextsByCreatedAt({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_4',
+            ttlDays: 1,
+            nowMs: 5000,
+        });
+
+        expect(removed).toBe(0);
+        expect(resolveQuotedTextByMsgId({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_4',
+            msgId: 'msg_clock_bound',
+            ttlDays: 1,
+            nowMs: 5000,
+        })?.text).toBe('clock-safe');
+    });
+
+    it('creates collision-resistant synthetic ids for createdAt fallback records', () => {
+        upsertCreatedAtFallbackMessageContext({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_5',
+            createdAt: 4000,
+            text: 'first',
+            messageType: 'card',
+            ttlMs: 60_000,
+            topic: null,
+        });
+
+        clearMessageContextCacheForTest();
+
+        upsertCreatedAtFallbackMessageContext({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_5',
+            createdAt: 4000,
+            text: 'second',
+            messageType: 'card',
+            ttlMs: 60_000,
+            topic: null,
+        });
+
+        const persistedFile = resolveNamespacePath('messages.context', {
+            storePath,
+            scope: { accountId: 'main', conversationId: 'cid_5' },
+            format: 'json',
+        });
+        const persisted = JSON.parse(fs.readFileSync(persistedFile, 'utf8'));
+
+        expect(Object.keys(persisted.records)).toHaveLength(2);
+        expect(Object.values(persisted.records).map((record: any) => record.text).sort()).toEqual([
+            'first',
+            'second',
+        ]);
     });
 });

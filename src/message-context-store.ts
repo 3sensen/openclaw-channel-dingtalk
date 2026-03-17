@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readNamespaceJson, writeNamespaceJsonAtomic } from "./persistence-store";
 
 const MESSAGE_CONTEXT_NAMESPACE = "messages.context";
@@ -452,13 +453,10 @@ export function upsertOutboundMessageContext(params: UpsertOutboundMessageContex
   });
 }
 
-let syntheticCounter = 0;
-
 export function upsertCreatedAtFallbackMessageContext(
   params: Omit<UpsertOutboundMessageContextParams, "delivery">,
 ): string {
-  syntheticCounter += 1;
-  const syntheticMsgId = `createdAt:${params.createdAt}:${syntheticCounter}`;
+  const syntheticMsgId = `createdAt:${params.createdAt}:${randomUUID()}`;
   return (
     upsertRecord({
       ...params,
@@ -592,7 +590,7 @@ export function cleanupMessageContextsByCreatedAt(
   if (!ttlDays || ttlDays <= 0) {
     return 0;
   }
-  const state = loadState(params);
+  const state = loadState(params, nowMs);
   const beforeCount = Object.keys(state.records).length;
   const cutoff = nowMs - ttlDays * 24 * 60 * 60 * 1000;
   const nextRecords: Record<string, MessageRecord> = {};
@@ -612,5 +610,4 @@ export function cleanupMessageContextsByCreatedAt(
 
 export function clearMessageContextCacheForTest(): void {
   stateCache.clear();
-  syntheticCounter = 0;
 }
