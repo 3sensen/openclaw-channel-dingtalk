@@ -31,7 +31,7 @@ import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
 import { dingtalkOnboardingAdapter } from "./onboarding.js";
 import { resolveOriginalPeerId, preloadPeerIdsFromSessions } from "./peer-id-registry";
 import { getDingTalkRuntime } from "./runtime";
-import { listKnownGroupTargets, listKnownUserTargets } from "./target-directory-store";
+import { listKnownGroupTargets, listKnownUserTargets } from "./targeting/target-directory-store";
 import {
   isFeedbackLearningAutoApplyEnabled,
   isFeedbackLearningEnabled,

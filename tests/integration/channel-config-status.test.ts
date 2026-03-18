@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { upsertObservedGroupTarget, upsertObservedUserTarget } from "../../src/target-directory-store";
+import { upsertObservedGroupTarget, upsertObservedUserTarget } from "../../src/targeting/target-directory-store";
 
 vi.mock("openclaw/plugin-sdk", () => ({
     buildChannelConfigSchema: vi.fn((schema: unknown) => schema),

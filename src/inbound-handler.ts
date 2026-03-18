@@ -37,7 +37,7 @@ import {
   clearProactiveRiskObservationsForTest,
   getProactiveRiskObservationForAny,
 } from "./proactive-risk-registry";
-import { upsertObservedGroupTarget, upsertObservedUserTarget } from "./target-directory-store";
+import { upsertObservedGroupTarget, upsertObservedUserTarget } from "./targeting/target-directory-store";
 import { createReplyStrategy } from "./reply-strategy";
 import type { DeliverPayload } from "./reply-strategy";
 import { getDingTalkRuntime } from "./runtime";

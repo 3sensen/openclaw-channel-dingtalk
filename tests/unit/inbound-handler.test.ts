@@ -100,7 +100,7 @@ import {
 } from '../../src/inbound-handler';
 import * as messageContextStore from '../../src/message-context-store';
 import { recordProactiveRiskObservation } from '../../src/proactive-risk-registry';
-import { listKnownGroupTargets, listKnownUserTargets } from '../../src/target-directory-store';
+import { listKnownGroupTargets, listKnownUserTargets } from '../../src/targeting/target-directory-store';
 
 const mockedAxiosPost = vi.mocked(axios.post);
 const mockedAxiosGet = vi.mocked(axios.get);

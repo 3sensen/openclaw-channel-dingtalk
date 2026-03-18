@@ -7,7 +7,7 @@ import {
     listKnownUserTargets,
     upsertObservedGroupTarget,
     upsertObservedUserTarget,
-} from "../../src/target-directory-store";
+} from "../../../src/targeting/target-directory-store";
 
 describe("target-directory-store", () => {
     const tempDirs: string[] = [];
