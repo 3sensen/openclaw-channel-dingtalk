@@ -89,6 +89,8 @@ export interface DingTalkConfig extends OpenClawConfig {
   feedbackLearningNoteTtlMs?: number;
   /** Whether to convert markdown tables to plain text for better rendering on some clients (default: true) */
   convertMarkdownTables?: boolean;
+  /** @mention the sender after card finalization in group chats; value is the message text */
+  cardAtSender?: string;
 }
 
 /**
@@ -152,6 +154,8 @@ export interface DingTalkChannelConfig {
   feedbackLearningNoteTtlMs?: number;
   /** Whether to convert markdown tables to plain text for better rendering on some clients (default: true) */
   convertMarkdownTables?: boolean;
+  /** @mention the sender after card finalization in group chats; value is the message text */
+  cardAtSender?: string;
 }
 
 /**
@@ -715,6 +719,7 @@ export function resolveDingTalkAccount(
       feedbackLearningAutoApply: dingtalk?.feedbackLearningAutoApply,
       feedbackLearningNoteTtlMs: dingtalk?.feedbackLearningNoteTtlMs,
       convertMarkdownTables: dingtalk?.convertMarkdownTables,
+      cardAtSender: dingtalk?.cardAtSender,
     };
     return {
       ...config,
