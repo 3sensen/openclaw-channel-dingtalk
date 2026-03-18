@@ -96,10 +96,12 @@ describe("channel config + status helpers", () => {
         expect(invalid.ok).toBe(false);
         expect(plugin.messaging.normalizeTarget("dingtalk:user_1")).toBe("user_1");
         expect(plugin.messaging.normalizeTarget("dingtalk:group:cidAbC")).toBe("cidAbC");
+        expect(plugin.messaging.normalizeTarget("dingtalk: user:staff_1")).toBe("staff_1");
         expect(plugin.messaging.targetResolver.hint).toContain("displayName");
         expect(plugin.messaging.targetResolver.looksLikeId("cidAbC")).toBe(true);
         expect(plugin.messaging.targetResolver.looksLikeId("user:staff_1")).toBe(true);
         expect(plugin.messaging.targetResolver.looksLikeId("+8613800138000")).toBe(true);
+        expect(plugin.messaging.targetResolver.looksLikeId("研发-日报群")).toBe(false);
         expect(plugin.messaging.targetResolver.looksLikeId("研发群")).toBe(false);
 
         const dmPolicy = plugin.security.resolveDmPolicy({ account: { config: {} } } as any);
