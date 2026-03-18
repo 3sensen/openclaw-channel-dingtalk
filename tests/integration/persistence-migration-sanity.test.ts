@@ -7,20 +7,20 @@ import {
     noteGroupMember,
 } from '../../src/group-members-store';
 import {
-    clearQuotedMsgCacheForTest,
-    getCachedDownloadCode,
-} from '../../src/quoted-msg-cache';
-import {
     clearCardContentCacheForTest,
-    getCardContentByProcessQueryKey,
 } from '../../src/card-service';
+import {
+    clearMessageContextCacheForTest,
+    resolveByAlias,
+    resolveByMsgId,
+} from '../../src/message-context-store';
 import { resolveNamespacePath } from '../../src/persistence-store';
 
 describe('persistence migration sanity', () => {
     const tempDirs: string[] = [];
 
     afterEach(() => {
-        clearQuotedMsgCacheForTest();
+        clearMessageContextCacheForTest();
         clearCardContentCacheForTest();
         for (const dir of tempDirs.splice(0)) {
             fs.rmSync(dir, { recursive: true, force: true });
@@ -107,26 +107,32 @@ describe('persistence migration sanity', () => {
                             },
                         },
                     },
-                    byAlias: {
-                        'inboundMsgId:msg_restore': 'msg_restore',
-                        'processQueryKey:carrier_restore': 'carrier_restore',
-                    },
-                    recentByCreatedAt: ['carrier_restore', 'msg_restore'],
                 },
                 null,
                 2,
             ),
         );
 
-        clearQuotedMsgCacheForTest();
+        clearMessageContextCacheForTest();
         clearCardContentCacheForTest();
 
-        const quoted = getCachedDownloadCode(accountId, conversationId, 'msg_restore', storePath);
+        const quoted = resolveByMsgId({
+            storePath,
+            accountId,
+            conversationId,
+            msgId: 'msg_restore',
+        });
         expect(quoted).not.toBeNull();
-        expect(quoted!.downloadCode).toBe('dl_restore');
-        expect(quoted!.spaceId).toBe('space_restore');
+        expect(quoted!.media?.downloadCode).toBe('dl_restore');
+        expect(quoted!.media?.spaceId).toBe('space_restore');
 
-        const card = getCardContentByProcessQueryKey(accountId, conversationId, 'carrier_restore', storePath);
-        expect(card).toBe('restored card content');
+        const card = resolveByAlias({
+            storePath,
+            accountId,
+            conversationId,
+            kind: 'processQueryKey',
+            value: 'carrier_restore',
+        });
+        expect(card?.text).toBe('restored card content');
     });
 });

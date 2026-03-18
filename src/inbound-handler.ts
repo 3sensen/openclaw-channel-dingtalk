@@ -4,10 +4,8 @@ import { extractAttachmentText } from "./attachment-text-extractor";
 import { getAccessToken } from "./auth";
 import {
   createAICard,
-  findCardContent,
   finishAICard,
   formatContentForCard,
-  getCardContentByProcessQueryKey,
   isCardInTerminalState,
 } from "./card-service";
 import { classifyAckReactionEmoji } from "./ack-reaction-classifier";
@@ -29,17 +27,21 @@ import {
   parseLearnCommand,
 } from "./learning-command-service";
 import { extractMessageContent } from "./message-utils";
+import {
+  DEFAULT_CREATED_AT_MATCH_WINDOW_MS,
+  DEFAULT_MEDIA_CONTEXT_TTL_MS,
+  DEFAULT_MESSAGE_CONTEXT_TTL_DAYS,
+  resolveByAlias,
+  resolveByCreatedAtWindow,
+  resolveByMsgId,
+  upsertInboundMessageContext,
+} from "./message-context-store";
 import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
 import { registerPeerId } from "./peer-id-registry";
 import {
   clearProactiveRiskObservationsForTest,
   getProactiveRiskObservationForAny,
 } from "./proactive-risk-registry";
-import {
-  appendQuoteJournalEntry,
-  DEFAULT_JOURNAL_TTL_DAYS,
-  resolveQuotedMessageById,
-} from "./quote-journal";
 import { getDingTalkRuntime } from "./runtime";
 import { sendBySession, sendMessage, sendProactiveMedia } from "./send-service";
 import { clearSessionPeerOverride, getSessionPeerOverride, setSessionPeerOverride } from "./session-peer-store";
@@ -48,7 +50,6 @@ import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./t
 import { AICardStatus } from "./types";
 import { createCardDraftController } from "./card-draft-controller";
 import { acquireSessionLock } from "./session-lock";
-import { cacheInboundDownloadCode, getCachedDownloadCode } from "./quoted-msg-cache";
 import { downloadGroupFile, getUnionIdByStaffId, resolveQuotedFile } from "./quoted-file-service";
 import {
   formatSessionAliasBoundReply,
@@ -82,6 +83,13 @@ const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const MIN_THINKING_REACTION_VISIBLE_MS = 1200;
 const ATTACHMENT_TEXT_PREFIX = "[附件内容摘录]";
 const proactiveHintLastSentAt = new Map<string, number>();
+
+function ttlDaysToMs(ttlDays: number | undefined): number | undefined {
+  if (typeof ttlDays !== "number" || !Number.isFinite(ttlDays) || ttlDays <= 0) {
+    return undefined;
+  }
+  return ttlDays * 24 * 60 * 60 * 1000;
+}
 
 export function resetProactivePermissionHintStateForTest(): void {
   proactiveHintLastSentAt.clear();
@@ -868,19 +876,19 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     !!extractedContent.quoted?.isQuotedFile ||
     !!extractedContent.quoted?.isQuotedCard ||
     extractedContent.quoted?.prefix.startsWith('[引用消息: "') === true;
-  const journalTTLDays = dingtalkConfig.journalTTLDays ?? DEFAULT_JOURNAL_TTL_DAYS;
+  const journalTTLDays = dingtalkConfig.journalTTLDays ?? DEFAULT_MESSAGE_CONTEXT_TTL_DAYS;
   let content = extractedContent;
 
   if (data.text?.isReplyMsg && data.originalMsgId && !hasConcreteQuotedPayload) {
     try {
-      const quoted = resolveQuotedMessageById({
+      const quoted = resolveByMsgId({
         storePath,
         accountId,
         conversationId: groupId,
-        originalMsgId: data.originalMsgId,
-        ttlDays: journalTTLDays,
+        msgId: data.originalMsgId,
       });
-      if (quoted?.text?.trim()) {
+      const cutoff = Date.now() - journalTTLDays * 24 * 60 * 60 * 1000;
+      if (quoted?.text?.trim() && quoted.createdAt >= cutoff) {
         const cleanedText = extractedContent.text.replace(
           /^\[这是一条引用消息，原消息ID: [^\]]+\]\n\n/,
           "",
@@ -896,7 +904,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   }
 
   try {
-    appendQuoteJournalEntry({
+    upsertInboundMessageContext({
       storePath,
       accountId,
       conversationId: groupId,
@@ -904,10 +912,13 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       messageType: content.messageType,
       text: stripQuotedPrefixForJournal(content.text),
       createdAt: data.createAt,
-      ttlDays: journalTTLDays,
+      ttlMs: ttlDaysToMs(journalTTLDays),
+      ttlReferenceMs: data.createAt,
+      cleanupCreatedAtTtlDays: journalTTLDays,
+      topic: null,
     });
   } catch (err) {
-    log?.warn?.(`[DingTalk] Quote journal append failed: ${String(err)}`);
+    log?.warn?.(`[DingTalk] Message context inbound append failed: ${String(err)}`);
   }
 
   let mediaPath: string | undefined;
@@ -922,15 +933,21 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
   // Cache downloadCode (+ spaceId/fileId) for quoted file lookups (DM + group).
   if (content.mediaPath && data.msgId) {
-    cacheInboundDownloadCode(
+    upsertInboundMessageContext({
+      storePath,
       accountId,
-      data.conversationId,
-      data.msgId,
-      content.mediaPath,
-      content.messageType,
-      data.createAt,
-      { spaceId: data.content?.spaceId, fileId: data.content?.fileId, storePath },
-    );
+      conversationId: data.conversationId,
+      msgId: data.msgId,
+      createdAt: data.createAt,
+      messageType: content.messageType,
+      media: {
+        downloadCode: content.mediaPath,
+        spaceId: data.content?.spaceId,
+        fileId: data.content?.fileId,
+      },
+      ttlMs: DEFAULT_MEDIA_CONTEXT_TTL_MS,
+      topic: null,
+    });
   }
 
   // User-sent DingTalk doc / Drive file card: cache msgId -> {spaceId,fileId}
@@ -941,15 +958,20 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     content.docSpaceId &&
     content.docFileId
   ) {
-    cacheInboundDownloadCode(
+    upsertInboundMessageContext({
+      storePath,
       accountId,
-      data.conversationId,
-      data.msgId,
-      undefined,
-      content.messageType,
-      data.createAt,
-      { spaceId: content.docSpaceId, fileId: content.docFileId, storePath },
-    );
+      conversationId: data.conversationId,
+      msgId: data.msgId,
+      createdAt: data.createAt,
+      messageType: content.messageType,
+      media: {
+        spaceId: content.docSpaceId,
+        fileId: content.docFileId,
+      },
+      ttlMs: DEFAULT_MEDIA_CONTEXT_TTL_MS,
+      topic: null,
+    });
 
     if (!mediaPath && isDirect && data.senderStaffId) {
       try {
@@ -978,21 +1000,26 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     if (!quotedMsgId) {
       return null;
     }
-    const cached = getCachedDownloadCode(accountId, data.conversationId, quotedMsgId, storePath);
-    if (!cached) {
+    const cached = resolveByMsgId({
+      storePath,
+      accountId,
+      conversationId: data.conversationId,
+      msgId: quotedMsgId,
+    });
+    if (!cached?.media) {
       return null;
     }
     let media: MediaFile | null = null;
-    if (cached.downloadCode) {
-      media = await downloadMedia(dingtalkConfig, cached.downloadCode, log);
+    if (cached.media.downloadCode) {
+      media = await downloadMedia(dingtalkConfig, cached.media.downloadCode, log);
     }
-    if (!media && cached.spaceId && cached.fileId && data.senderStaffId) {
+    if (!media && cached.media.spaceId && cached.media.fileId && data.senderStaffId) {
       try {
         const unionId = await getUnionIdByStaffId(dingtalkConfig, data.senderStaffId, log);
         media = await downloadGroupFile(
           dingtalkConfig,
-          cached.spaceId,
-          cached.fileId,
+          cached.media.spaceId,
+          cached.media.fileId,
           unionId,
           log,
         );
@@ -1045,15 +1072,20 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         mediaType = resolved.media.mimeType;
         fileResolved = true;
         if (content.quoted.msgId) {
-          cacheInboundDownloadCode(
+          upsertInboundMessageContext({
+            storePath,
             accountId,
-            data.conversationId,
-            content.quoted.msgId,
-            undefined,
-            "file",
-            content.quoted.fileCreatedAt || Date.now(),
-            { storePath, spaceId: resolved.spaceId, fileId: resolved.fileId },
-          );
+            conversationId: data.conversationId,
+            msgId: content.quoted.msgId,
+            createdAt: content.quoted.fileCreatedAt || Date.now(),
+            messageType: "file",
+            media: {
+              spaceId: resolved.spaceId,
+              fileId: resolved.fileId,
+            },
+            ttlMs: DEFAULT_MEDIA_CONTEXT_TTL_MS,
+            topic: null,
+          });
         }
       }
     }
@@ -1101,15 +1133,20 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         docResolved = true;
         content.text = content.text.replace(content.quoted.prefix, "[引用了钉钉文档]\n\n");
         if (content.quoted.msgId) {
-          cacheInboundDownloadCode(
+          upsertInboundMessageContext({
+            storePath,
             accountId,
-            data.conversationId,
-            content.quoted.msgId,
-            undefined,
-            "interactiveCardFile",
-            content.quoted.fileCreatedAt || Date.now(),
-            { storePath, spaceId: resolved.spaceId, fileId: resolved.fileId },
-          );
+            conversationId: data.conversationId,
+            msgId: content.quoted.msgId,
+            createdAt: content.quoted.fileCreatedAt || Date.now(),
+            messageType: "interactiveCardFile",
+            media: {
+              spaceId: resolved.spaceId,
+              fileId: resolved.fileId,
+            },
+            ttlMs: DEFAULT_MEDIA_CONTEXT_TTL_MS,
+            topic: null,
+          });
         }
       }
     }
@@ -1128,16 +1165,25 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   // Quoted AI card: prefer deterministic processQueryKey lookup, and only
   // fall back to the legacy createdAt matcher when the callback omits that key.
   if (content.quoted?.isQuotedCard) {
-    const cardContent = content.quoted.processQueryKey
-      ? getCardContentByProcessQueryKey(
+    const cardRecord = content.quoted.processQueryKey
+      ? resolveByAlias({
+          storePath: accountStorePath,
           accountId,
-          to,
-          content.quoted.processQueryKey,
-          accountStorePath,
-        )
+          conversationId: to,
+          kind: "processQueryKey",
+          value: content.quoted.processQueryKey,
+        })
       : content.quoted.cardCreatedAt
-        ? findCardContent(accountId, to, content.quoted.cardCreatedAt, accountStorePath)
+        ? resolveByCreatedAtWindow({
+            storePath: accountStorePath,
+            accountId,
+            conversationId: to,
+            createdAt: content.quoted.cardCreatedAt,
+            windowMs: DEFAULT_CREATED_AT_MATCH_WINDOW_MS,
+            direction: "outbound",
+          })
         : null;
+    const cardContent = cardRecord?.text || null;
     if (cardContent) {
       const preview = cardContent.length > 50 ? cardContent.slice(0, 50) + "..." : cardContent;
       content.text = content.text.replace(

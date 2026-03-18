@@ -10,8 +10,8 @@ import { stripTargetPrefix } from "./config";
 import { getLogger } from "./logger-context";
 import { getVoiceDurationMs, uploadMedia as uploadMediaUtil } from "./media-utils";
 import { convertMarkdownTablesToPlainText, detectMarkdownAndExtractTitle } from "./message-utils";
+import { DEFAULT_MESSAGE_CONTEXT_TTL_DAYS, upsertOutboundMessageContext } from "./message-context-store";
 import { resolveOriginalPeerId } from "./peer-id-registry";
-import { appendOutboundToQuoteJournal, appendProactiveOutboundJournal } from "./quote-journal";
 import {
   deleteProactiveRiskObservation,
   getProactiveRiskObservation,
@@ -81,6 +81,37 @@ function extractOutboundDeliveryMetadata(payload: unknown): {
         ? tracking.cardInstanceId.trim()
         : undefined;
   return { messageId, processQueryKey, outTrackId, cardInstanceId };
+}
+
+function persistOutboundMessageContext(params: {
+  storePath?: string;
+  accountId?: string;
+  conversationId: string;
+  text?: string;
+  messageType?: string;
+  createdAt?: number;
+  delivery: {
+    messageId?: string;
+    processQueryKey?: string;
+    outTrackId?: string;
+    cardInstanceId?: string;
+    kind?: "session" | "proactive-text" | "proactive-card" | "proactive-media";
+  };
+}): void {
+  if (!params.storePath || !params.accountId) {
+    return;
+  }
+  upsertOutboundMessageContext({
+    storePath: params.storePath,
+    accountId: params.accountId,
+    conversationId: params.conversationId,
+    createdAt: params.createdAt ?? Date.now(),
+    text: params.text,
+    messageType: params.messageType,
+    ttlMs: DEFAULT_MESSAGE_CONTEXT_TTL_DAYS * 24 * 60 * 60 * 1000,
+    topic: null,
+    delivery: params.delivery,
+  });
 }
 
 function composeCardContentForAppend(previous: string | undefined, incoming: string): string {
@@ -376,21 +407,17 @@ export async function sendProactiveMedia(
 
     const delivery = extractOutboundDeliveryMetadata(result.data);
     const messageId = delivery.messageId || delivery.processQueryKey || delivery.outTrackId;
-    if (options.storePath && options.accountId) {
-      await appendProactiveOutboundJournal({
-        storePath: options.storePath,
-        accountId: options.accountId,
-        conversationId: options.conversationId || resolvedTarget,
-        messageId,
-        text: `[media:${mediaType}] ${mediaPath}`,
-        messageType: "outbound-proactive-media",
-        delivery: {
-          ...delivery,
-          kind: "proactive-media",
-        },
-        log,
-      });
-    }
+    persistOutboundMessageContext({
+      storePath: options.storePath,
+      accountId: options.accountId,
+      conversationId: options.conversationId || resolvedTarget,
+      text: `[media:${mediaType}] ${mediaPath}`,
+      messageType: "outbound-proactive-media",
+      delivery: {
+        ...delivery,
+        kind: "proactive-media",
+      },
+    });
     return { ok: true, data: result.data, messageId };
   } catch (err: any) {
     log?.error?.(`[DingTalk] Failed to send proactive media: ${err.message}`);
@@ -562,42 +589,34 @@ export async function sendMessage(
       const data = await sendBySession(config, options.sessionWebhook, text, options);
       const delivery = extractOutboundDeliveryMetadata(data);
       const messageId = delivery.messageId || delivery.processQueryKey || delivery.outTrackId;
-      if (options.storePath && options.accountId) {
-        await appendOutboundToQuoteJournal({
-          storePath: options.storePath,
-          accountId: options.accountId,
-          conversationId: options.conversationId || conversationId,
-          messageId,
-          text,
-          messageType: "outbound",
-          delivery: {
-            ...delivery,
-            kind: "session",
-          },
-          log,
-        });
-      }
+      persistOutboundMessageContext({
+        storePath: options.storePath,
+        accountId: options.accountId,
+        conversationId: options.conversationId || conversationId,
+        text,
+        messageType: "outbound",
+        delivery: {
+          ...delivery,
+          kind: "session",
+        },
+      });
       return { ok: true, data, messageId };
     }
 
     const result = await sendProactiveTextOrMarkdown(config, conversationId, text, options);
     const delivery = extractOutboundDeliveryMetadata(result);
     const messageId = delivery.messageId || delivery.processQueryKey || delivery.outTrackId;
-    if (options.storePath && options.accountId) {
-      await appendProactiveOutboundJournal({
-        storePath: options.storePath,
-        accountId: options.accountId,
-        conversationId: options.conversationId || conversationId,
-        messageId,
-        text,
-        messageType: "outbound-proactive",
-        delivery: {
-          ...delivery,
-          kind: isTrackingResult(result) ? "proactive-card" : "proactive-text",
-        },
-        log,
-      });
-    }
+    persistOutboundMessageContext({
+      storePath: options.storePath,
+      accountId: options.accountId,
+      conversationId: options.conversationId || conversationId,
+      text,
+      messageType: "outbound-proactive",
+      delivery: {
+        ...delivery,
+        kind: isTrackingResult(result) ? "proactive-card" : "proactive-text",
+      },
+    });
     if (isTrackingResult(result)) {
       return { ok: true, tracking: result.tracking };
     }

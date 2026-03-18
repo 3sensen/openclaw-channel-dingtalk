@@ -6,12 +6,11 @@ import { getAccessToken } from "./auth";
 import { stripTargetPrefix } from "./config";
 import { resolveOriginalPeerId } from "./peer-id-registry";
 import {
+  createSyntheticOutboundMsgId,
   clearMessageContextCacheForTest,
   DEFAULT_CARD_CONTENT_TTL_MS,
   DEFAULT_CREATED_AT_MATCH_WINDOW_MS,
   resolveByCreatedAtWindow,
-  resolveQuotedCardByProcessQueryKey,
-  upsertCreatedAtFallbackMessageContext,
   upsertOutboundMessageContext,
 } from "./message-context-store";
 import {
@@ -855,7 +854,7 @@ export async function finishAICard(
   }
 }
 
-export function cacheCardContentByProcessQueryKey(
+function cacheCardContentByProcessQueryKey(
   accountId: string,
   conversationId: string,
   processQueryKey: string,
@@ -881,23 +880,6 @@ export function cacheCardContentByProcessQueryKey(
   });
 }
 
-export function getCardContentByProcessQueryKey(
-  accountId: string,
-  conversationId: string,
-  processQueryKey: string,
-  storePath?: string,
-): string | null {
-  if (!processQueryKey.trim() || !storePath) {
-    return null;
-  }
-  return resolveQuotedCardByProcessQueryKey({
-    storePath,
-    accountId,
-    conversationId,
-    processQueryKey,
-  });
-}
-
 export function cacheCardContent(
   accountId: string,
   conversationId: string,
@@ -906,6 +888,9 @@ export function cacheCardContent(
   storePath?: string,
 ): void {
   if (!storePath) {
+    // This fallback only serves short-lived, no-storePath sessions. It is kept
+    // local to card-service instead of using the shared message context store
+    // because there is no durable scope to share across modules or restarts.
     const scopeKey = `${accountId}:${conversationId}`;
     const nowMs = Date.now();
     const bucket = touchInMemoryCardContentBucket(scopeKey, nowMs);
@@ -914,10 +899,11 @@ export function cacheCardContent(
     bucket.entries = bucket.entries.slice(-CARD_CACHE_MAX_PER_CONVERSATION);
     return;
   }
-  upsertCreatedAtFallbackMessageContext({
+  upsertOutboundMessageContext({
     storePath,
     accountId,
     conversationId,
+    msgId: createSyntheticOutboundMsgId(createdAt),
     createdAt,
     text: content,
     messageType: "card",

@@ -4,15 +4,12 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-    cleanupMessageContextsByCreatedAt,
     cleanupExpiredMessageContexts,
     clearMessageContextCacheForTest,
+    createSyntheticOutboundMsgId,
     resolveByAlias,
     resolveByCreatedAtWindow,
-    resolveQuotedCardByProcessQueryKey,
-    resolveQuotedMediaByMsgId,
-    resolveQuotedTextByMsgId,
-    upsertCreatedAtFallbackMessageContext,
+    resolveByMsgId,
     upsertInboundMessageContext,
     upsertOutboundMessageContext,
 } from '../../src/message-context-store';
@@ -64,14 +61,14 @@ describe('message-context-store', () => {
             topic: null,
         });
 
-        expect(resolveQuotedTextByMsgId({
+        expect(resolveByMsgId({
             storePath,
             accountId: 'main',
             conversationId: 'cid_1',
             msgId: 'msg_in_1',
         })?.text).toBe('hello');
 
-        expect(resolveQuotedMediaByMsgId({
+        expect(resolveByMsgId({
             storePath,
             accountId: 'main',
             conversationId: 'cid_1',
@@ -100,12 +97,13 @@ describe('message-context-store', () => {
             },
         });
 
-        expect(resolveQuotedCardByProcessQueryKey({
+        expect(resolveByAlias({
             storePath,
             accountId: 'main',
             conversationId: 'cid_2',
-            processQueryKey: 'carrier_1',
-        })).toBe('card content');
+            kind: 'processQueryKey',
+            value: 'carrier_1',
+        })?.text).toBe('card content');
 
         expect(resolveByAlias({
             storePath,
@@ -150,16 +148,19 @@ describe('message-context-store', () => {
         });
 
         expect(removed).toBe(1);
-        expect(resolveQuotedCardByProcessQueryKey({
+        expect(resolveByAlias({
             storePath,
             accountId: 'main',
             conversationId: 'cid_3',
-            processQueryKey: 'carrier_expire',
+            kind: 'processQueryKey',
+            value: 'carrier_expire',
             nowMs: 5001,
         })).toBeNull();
     });
 
-    it('uses caller-provided nowMs when cleaning by createdAt', () => {
+    it('prunes by createdAt during inbound upsert in a single write path', () => {
+        const nowMs = 2 * 24 * 60 * 60 * 1000;
+
         upsertInboundMessageContext({
             storePath,
             accountId: 'main',
@@ -172,31 +173,42 @@ describe('message-context-store', () => {
             ttlMs: 10_000,
             topic: null,
         });
-
-        const removed = cleanupMessageContextsByCreatedAt({
+        upsertInboundMessageContext({
             storePath,
             accountId: 'main',
             conversationId: 'cid_4',
-            ttlDays: 1,
-            nowMs: 5000,
+            msgId: 'msg_new',
+            createdAt: nowMs,
+            updatedAt: nowMs,
+            messageType: 'text',
+            text: 'fresh',
+            ttlMs: 10_000,
+            cleanupCreatedAtTtlDays: 1,
+            topic: null,
         });
 
-        expect(removed).toBe(0);
-        expect(resolveQuotedTextByMsgId({
+        expect(resolveByMsgId({
             storePath,
             accountId: 'main',
             conversationId: 'cid_4',
             msgId: 'msg_clock_bound',
-            ttlDays: 1,
-            nowMs: 5000,
-        })?.text).toBe('clock-safe');
+            nowMs,
+        })).toBeNull();
+        expect(resolveByMsgId({
+            storePath,
+            accountId: 'main',
+            conversationId: 'cid_4',
+            msgId: 'msg_new',
+            nowMs,
+        })?.text).toBe('fresh');
     });
 
     it('creates collision-resistant synthetic ids for createdAt fallback records', () => {
-        upsertCreatedAtFallbackMessageContext({
+        upsertOutboundMessageContext({
             storePath,
             accountId: 'main',
             conversationId: 'cid_5',
+            msgId: createSyntheticOutboundMsgId(4000),
             createdAt: 4000,
             text: 'first',
             messageType: 'card',
@@ -206,10 +218,11 @@ describe('message-context-store', () => {
 
         clearMessageContextCacheForTest();
 
-        upsertCreatedAtFallbackMessageContext({
+        upsertOutboundMessageContext({
             storePath,
             accountId: 'main',
             conversationId: 'cid_5',
+            msgId: createSyntheticOutboundMsgId(4000),
             createdAt: 4000,
             text: 'second',
             messageType: 'card',
@@ -229,5 +242,24 @@ describe('message-context-store', () => {
             'first',
             'second',
         ]);
+    });
+
+    it('keeps no-storePath reads and writes in the unified in-memory state', () => {
+        upsertInboundMessageContext({
+            accountId: 'main',
+            conversationId: 'cid_mem',
+            msgId: 'msg_mem_1',
+            createdAt: Date.now(),
+            messageType: 'file',
+            media: { downloadCode: 'dl_mem_1' },
+            ttlMs: 60_000,
+            topic: null,
+        });
+
+        expect(resolveByMsgId({
+            accountId: 'main',
+            conversationId: 'cid_mem',
+            msgId: 'msg_mem_1',
+        })?.media?.downloadCode).toBe('dl_mem_1');
     });
 });

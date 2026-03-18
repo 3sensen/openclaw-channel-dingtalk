@@ -46,6 +46,12 @@ interface MessageContextState {
   recentByCreatedAt: string[];
 }
 
+interface PersistedMessageContextState {
+  version: number;
+  updatedAt: number;
+  records: Record<string, MessageRecord>;
+}
+
 interface BaseUpsertParams {
   storePath?: string;
   accountId: string;
@@ -66,9 +72,11 @@ interface BaseUpsertParams {
 
 export interface UpsertInboundMessageContextParams extends BaseUpsertParams {
   msgId: string;
+  cleanupCreatedAtTtlDays?: number;
 }
 
 export interface UpsertOutboundMessageContextParams extends BaseUpsertParams {
+  msgId?: string;
   delivery?: MessageRecord["delivery"];
 }
 
@@ -92,28 +100,6 @@ function fallbackState(): MessageContextState {
     byAlias: {},
     recentByCreatedAt: [],
   };
-}
-
-function hydrateState(params: ScopeParams): MessageContextState {
-  if (!params.storePath) {
-    return fallbackState();
-  }
-  const persisted = readNamespaceJson<Partial<MessageContextState>>(MESSAGE_CONTEXT_NAMESPACE, {
-    storePath: params.storePath,
-    scope: { accountId: params.accountId, conversationId: params.conversationId || undefined },
-    format: "json",
-    fallback: fallbackState(),
-  });
-  const parsedRecords = asRecord(persisted.records) || {};
-  const hydrated = fallbackState();
-  hydrated.updatedAt = typeof persisted.updatedAt === "number" ? persisted.updatedAt : Date.now();
-  for (const [key, value] of Object.entries(parsedRecords)) {
-    const normalized = normalizeMessageRecord(value);
-    if (normalized) {
-      hydrated.records[key] = normalized;
-    }
-  }
-  return hydrated;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -238,12 +224,16 @@ function buildAliasEntries(record: MessageRecord): Array<[string, string]> {
   return aliases;
 }
 
-function rebuildState(state: MessageContextState, nowMs: number): { state: MessageContextState; removed: number } {
+function isRecordExpired(record: MessageRecord, nowMs: number): boolean {
+  return typeof record.expiresAt === "number" && Number.isFinite(record.expiresAt) && nowMs >= record.expiresAt;
+}
+
+function normalizeState(state: MessageContextState, nowMs: number): { state: MessageContextState; removed: number } {
   const normalizedRecords: Record<string, MessageRecord> = {};
   const sortedRecords = Object.values(state.records)
     .map((record) => normalizeMessageRecord(record))
     .filter((record): record is MessageRecord => record !== null)
-    .filter((record) => !record.expiresAt || nowMs < record.expiresAt)
+    .filter((record) => !isRecordExpired(record, nowMs))
     .toSorted((left, right) => left.createdAt - right.createdAt);
   const keptRecords = sortedRecords.slice(-MAX_RECORDS_PER_SCOPE);
   for (const record of keptRecords) {
@@ -267,28 +257,62 @@ function rebuildState(state: MessageContextState, nowMs: number): { state: Messa
   };
 }
 
+function reindexState(state: MessageContextState): MessageContextState {
+  const sortedRecords = Object.values(state.records)
+    .toSorted((left, right) => left.createdAt - right.createdAt)
+    .slice(-MAX_RECORDS_PER_SCOPE);
+  const records: Record<string, MessageRecord> = {};
+  const byAlias: Record<string, string> = {};
+  for (const record of sortedRecords) {
+    records[record.msgId] = record;
+    for (const [key, value] of buildAliasEntries(record)) {
+      byAlias[key] = value;
+    }
+  }
+  return {
+    version: MESSAGE_CONTEXT_VERSION,
+    updatedAt: state.updatedAt,
+    records,
+    byAlias,
+    recentByCreatedAt: sortedRecords.map((record) => record.msgId),
+  };
+}
+
+function hydrateState(params: ScopeParams, nowMs: number): MessageContextState {
+  if (!params.storePath) {
+    return fallbackState();
+  }
+  const persisted = readNamespaceJson<Partial<PersistedMessageContextState>>(MESSAGE_CONTEXT_NAMESPACE, {
+    storePath: params.storePath,
+    scope: { accountId: params.accountId, conversationId: params.conversationId || undefined },
+    format: "json",
+    fallback: { version: MESSAGE_CONTEXT_VERSION, updatedAt: Date.now(), records: {} },
+  });
+  const parsedRecords = asRecord(persisted.records) || {};
+  const hydrated = fallbackState();
+  hydrated.updatedAt = typeof persisted.updatedAt === "number" ? persisted.updatedAt : Date.now();
+  for (const [key, value] of Object.entries(parsedRecords)) {
+    const normalized = normalizeMessageRecord(value);
+    if (normalized) {
+      hydrated.records[key] = normalized;
+    }
+  }
+  return normalizeState(hydrated, nowMs).state;
+}
+
 function loadState(params: ScopeParams, nowMs: number = Date.now()): MessageContextState {
   const scopeKey = getScopeKey(params);
   const cached = stateCache.get(scopeKey);
   if (cached) {
-    const rebuilt = rebuildState(cached, nowMs).state;
-    stateCache.set(scopeKey, rebuilt);
-    return rebuilt;
+    return cached;
   }
-  if (!params.storePath) {
-    const emptyState = fallbackState();
-    stateCache.set(scopeKey, emptyState);
-    return emptyState;
-  }
-  const hydrated = hydrateState(params);
-  const rebuilt = rebuildState(hydrated, nowMs).state;
-  stateCache.set(scopeKey, rebuilt);
-  return rebuilt;
+  const hydrated = params.storePath ? hydrateState(params, nowMs) : fallbackState();
+  stateCache.set(scopeKey, hydrated);
+  return hydrated;
 }
 
 function writeState(params: ScopeParams, state: MessageContextState): void {
-  const normalized = rebuildState(state, state.updatedAt || Date.now()).state;
-  stateCache.set(getScopeKey(params), normalized);
+  stateCache.set(getScopeKey(params), state);
   if (!params.storePath) {
     return;
   }
@@ -296,7 +320,11 @@ function writeState(params: ScopeParams, state: MessageContextState): void {
     storePath: params.storePath,
     scope: { accountId: params.accountId, conversationId: params.conversationId || undefined },
     format: "json",
-    data: normalized,
+    data: {
+      version: MESSAGE_CONTEXT_VERSION,
+      updatedAt: state.updatedAt,
+      records: state.records,
+    } satisfies PersistedMessageContextState,
   });
 }
 
@@ -346,9 +374,13 @@ function mergeDelivery(
 function resolveExistingMsgId(
   state: MessageContextState,
   params: { direction: MessageContextDirection; msgId?: string; delivery?: MessageRecord["delivery"] },
+  nowMs: number,
 ): string | undefined {
-  if (params.direction === "inbound" && params.msgId && state.records[params.msgId]) {
-    return params.msgId;
+  if (params.direction === "inbound" && params.msgId) {
+    const direct = state.records[params.msgId];
+    if (direct && !isRecordExpired(direct, nowMs)) {
+      return params.msgId;
+    }
   }
   const delivery = params.delivery;
   if (!delivery) {
@@ -365,7 +397,11 @@ function resolveExistingMsgId(
       continue;
     }
     const aliasHit = state.byAlias[buildAliasKey(kind, value)];
-    if (aliasHit && state.records[aliasHit]) {
+    if (!aliasHit) {
+      continue;
+    }
+    const record = state.records[aliasHit];
+    if (record && !isRecordExpired(record, nowMs)) {
       return aliasHit;
     }
   }
@@ -377,6 +413,24 @@ function computeExpiresAt(nowMs: number, ttlMs?: number, ttlReferenceMs?: number
     return undefined;
   }
   return (typeof ttlReferenceMs === "number" && Number.isFinite(ttlReferenceMs) ? ttlReferenceMs : nowMs) + ttlMs;
+}
+
+function pruneStateByCreatedAt(state: MessageContextState, ttlDays: number, nowMs: number): number {
+  if (!ttlDays || ttlDays <= 0) {
+    return 0;
+  }
+  const cutoff = nowMs - ttlDays * 24 * 60 * 60 * 1000;
+  const nextRecords: Record<string, MessageRecord> = {};
+  for (const [msgId, record] of Object.entries(state.records)) {
+    if (record.createdAt >= cutoff) {
+      nextRecords[msgId] = record;
+    }
+  }
+  const removed = Object.keys(state.records).length - Object.keys(nextRecords).length;
+  if (removed > 0) {
+    state.records = nextRecords;
+  }
+  return removed;
 }
 
 function upsertRecord(
@@ -392,15 +446,20 @@ function upsertRecord(
     text?: string;
     media?: MessageRecord["media"];
     delivery?: MessageRecord["delivery"];
+    cleanupCreatedAtTtlDays?: number;
   },
 ): string | undefined {
   const nowMs = params.updatedAt ?? Date.now();
-  const state = loadState(params, nowMs);
+  let state = normalizeState(loadState(params, nowMs), nowMs).state;
+  if (params.cleanupCreatedAtTtlDays && params.cleanupCreatedAtTtlDays > 0) {
+    pruneStateByCreatedAt(state, params.cleanupCreatedAtTtlDays, nowMs);
+    state = reindexState(state);
+  }
   const existingMsgId = resolveExistingMsgId(state, {
     direction: params.direction,
     msgId: params.msgId,
     delivery: params.delivery,
-  });
+  }, nowMs);
   const canonicalMsgId =
     existingMsgId ||
     params.msgId ||
@@ -430,6 +489,7 @@ function upsertRecord(
     delivery: mergeDelivery(existing?.delivery, params.delivery),
   };
   state.updatedAt = nowMs;
+  state = reindexState(state);
   writeState(params, state);
   return canonicalMsgId;
 }
@@ -441,6 +501,7 @@ export function upsertInboundMessageContext(params: UpsertInboundMessageContextP
       direction: "inbound",
       topic: params.topic ?? null,
       msgId: params.msgId,
+      cleanupCreatedAtTtlDays: params.cleanupCreatedAtTtlDays,
     }) || params.msgId
   );
 }
@@ -453,86 +514,38 @@ export function upsertOutboundMessageContext(params: UpsertOutboundMessageContex
   });
 }
 
-export function upsertCreatedAtFallbackMessageContext(
-  params: Omit<UpsertOutboundMessageContextParams, "delivery">,
-): string {
-  const syntheticMsgId = `createdAt:${params.createdAt}:${randomUUID()}`;
-  return (
-    upsertRecord({
-      ...params,
-      direction: "outbound",
-      topic: params.topic ?? null,
-      msgId: syntheticMsgId,
-    }) || syntheticMsgId
-  );
+export function createSyntheticOutboundMsgId(createdAt: number): string {
+  return `createdAt:${createdAt}:${randomUUID()}`;
 }
 
-function getRecordByCanonicalOrInboundAlias(
+export function resolveByMsgId(
   params: ScopeParams & { msgId: string; nowMs?: number },
 ): MessageRecord | null {
-  const state = loadState(params, params.nowMs);
+  const nowMs = params.nowMs ?? Date.now();
+  const state = loadState(params, nowMs);
   const direct = state.records[params.msgId];
-  if (direct) {
+  if (direct && !isRecordExpired(direct, nowMs)) {
     return direct;
   }
   const aliasTarget = state.byAlias[buildAliasKey("inboundMsgId", params.msgId)];
   if (!aliasTarget) {
     return null;
   }
-  return state.records[aliasTarget] || null;
+  const record = state.records[aliasTarget];
+  return record && !isRecordExpired(record, nowMs) ? record : null;
 }
 
-export function resolveByAlias(params: ScopeParams & { kind: MessageAliasKind; value: string; nowMs?: number }): MessageRecord | null {
-  const state = loadState(params, params.nowMs);
+export function resolveByAlias(
+  params: ScopeParams & { kind: MessageAliasKind; value: string; nowMs?: number },
+): MessageRecord | null {
+  const nowMs = params.nowMs ?? Date.now();
+  const state = loadState(params, nowMs);
   const msgId = state.byAlias[buildAliasKey(params.kind, params.value)];
   if (!msgId) {
     return null;
   }
-  return state.records[msgId] || null;
-}
-
-export function resolveQuotedTextByMsgId(
-  params: ScopeParams & { msgId: string; ttlDays?: number; nowMs?: number },
-): { msgId: string; text?: string; createdAt: number } | null {
-  const record = getRecordByCanonicalOrInboundAlias(params);
-  if (!record || typeof record.text !== "string") {
-    return null;
-  }
-  const nowMs = params.nowMs ?? Date.now();
-  const ttlDays = params.ttlDays ?? DEFAULT_MESSAGE_CONTEXT_TTL_DAYS;
-  if (ttlDays > 0) {
-    const cutoff = nowMs - ttlDays * 24 * 60 * 60 * 1000;
-    if (record.createdAt < cutoff) {
-      return null;
-    }
-  }
-  return { msgId: record.msgId, text: record.text, createdAt: record.createdAt };
-}
-
-export function resolveQuotedMediaByMsgId(
-  params: ScopeParams & { msgId: string; nowMs?: number },
-): { msgId: string; media?: MessageRecord["media"]; createdAt: number; messageType?: string; expiresAt?: number } | null {
-  const record = getRecordByCanonicalOrInboundAlias(params);
-  if (!record?.media) {
-    return null;
-  }
-  return {
-    msgId: record.msgId,
-    media: record.media,
-    createdAt: record.createdAt,
-    messageType: record.messageType,
-    expiresAt: record.expiresAt,
-  };
-}
-
-export function resolveQuotedCardByProcessQueryKey(
-  params: ScopeParams & { processQueryKey: string; nowMs?: number },
-): string | null {
-  const record = resolveByAlias({ ...params, kind: "processQueryKey", value: params.processQueryKey });
-  if (!record?.text?.trim()) {
-    return null;
-  }
-  return record.text;
+  const record = state.records[msgId];
+  return record && !isRecordExpired(record, nowMs) ? record : null;
 }
 
 export function resolveByCreatedAtWindow(
@@ -550,7 +563,7 @@ export function resolveByCreatedAtWindow(
   let bestDelta = Infinity;
   for (const msgId of state.recentByCreatedAt) {
     const record = state.records[msgId];
-    if (!record) {
+    if (!record || isRecordExpired(record, nowMs)) {
       continue;
     }
     if (params.direction && record.direction !== params.direction) {
@@ -569,41 +582,13 @@ export function cleanupExpiredMessageContexts(
   params: ScopeParams & { nowMs?: number },
 ): number {
   const nowMs = params.nowMs ?? Date.now();
-  const scopeKey = getScopeKey(params);
-  const rawState = stateCache.get(scopeKey) || hydrateState(params);
-  const beforeCount = Object.keys(rawState.records).length;
-  const state = loadState(params, nowMs);
-  const rebuilt = rebuildState(state, nowMs);
-  const removed = beforeCount - Object.keys(rebuilt.state.records).length;
-  if (removed > 0) {
-    rebuilt.state.updatedAt = nowMs;
-    writeState(params, rebuilt.state);
-  }
-  return removed;
-}
-
-export function cleanupMessageContextsByCreatedAt(
-  params: ScopeParams & { ttlDays: number; nowMs?: number },
-): number {
-  const nowMs = params.nowMs ?? Date.now();
-  const ttlDays = params.ttlDays;
-  if (!ttlDays || ttlDays <= 0) {
-    return 0;
-  }
   const state = loadState(params, nowMs);
   const beforeCount = Object.keys(state.records).length;
-  const cutoff = nowMs - ttlDays * 24 * 60 * 60 * 1000;
-  const nextRecords: Record<string, MessageRecord> = {};
-  for (const [msgId, record] of Object.entries(state.records)) {
-    if (record.createdAt >= cutoff) {
-      nextRecords[msgId] = record;
-    }
-  }
-  const removed = beforeCount - Object.keys(nextRecords).length;
+  const normalized = normalizeState(state, nowMs).state;
+  const removed = beforeCount - Object.keys(normalized.records).length;
   if (removed > 0) {
-    state.records = nextRecords;
-    state.updatedAt = nowMs;
-    writeState(params, state);
+    normalized.updatedAt = nowMs;
+    writeState(params, normalized);
   }
   return removed;
 }
