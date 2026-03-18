@@ -215,7 +215,7 @@ export async function sendProactiveTextOrMarkdown(
 
   // In card mode, use card API to avoid oToMessages/batchSend permission requirement.
   const messageType = config.messageType || "markdown";
-  if (messageType === "card" && config.cardTemplateId) {
+  if (messageType === "card" && config.cardTemplateId && !options.forceMarkdown) {
     log?.debug?.(
       `[DingTalk] Using card API for proactive message to user ${resolvedTarget}${proactiveRiskTag}`,
     );
@@ -242,7 +242,7 @@ export async function sendProactiveTextOrMarkdown(
     ? "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
     : "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";
 
-  const normalizedText = convertMarkdownTablesToPlainText(text);
+  const normalizedText = config.convertMarkdownTables !== false ? convertMarkdownTablesToPlainText(text) : text;
   const { useMarkdown, title } = detectMarkdownAndExtractTitle(normalizedText, options, "OpenClaw 提醒");
 
   log?.debug?.(
@@ -491,7 +491,7 @@ export async function sendBySession(
   }
 
   // Fallback to text/markdown reply payload.
-  const normalizedText = convertMarkdownTablesToPlainText(text);
+  const normalizedText = config.convertMarkdownTables !== false ? convertMarkdownTablesToPlainText(text) : text;
   const { useMarkdown, title } = detectMarkdownAndExtractTitle(normalizedText, options, "Clawdbot 消息");
   const chunks = splitMarkdownChunks(normalizedText, DINGTALK_TEXT_CHUNK_LIMIT);
 
@@ -534,7 +534,7 @@ export async function sendMessage(
     const messageType = config.messageType || "markdown";
     const log = options.log || getLogger();
 
-    if (messageType === "card" && options.card) {
+    if (messageType === "card" && options.card && !options.forceMarkdown) {
       const card = options.card;
       if (isCardInTerminalState(card.state)) {
         if (options.sessionWebhook) {
