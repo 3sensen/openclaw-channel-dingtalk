@@ -153,7 +153,15 @@ describe('send-service media branches', () => {
             'user_123',
             '/tmp/a.amr',
             'voice',
-            { accountId: 'main', storePath: '/tmp/sessions.json' } as any,
+            {
+                accountId: 'main',
+                storePath: '/tmp/sessions.json',
+                quotedRef: {
+                    targetDirection: 'inbound',
+                    key: 'msgId',
+                    value: 'msg_in_media_1',
+                },
+            } as any,
         );
 
         expect(messageContextMocks.upsertOutboundMessageContextMock).toHaveBeenCalledWith(
@@ -163,6 +171,11 @@ describe('send-service media branches', () => {
                 conversationId: 'user_123',
                 createdAt: expect.any(Number),
                 messageType: 'outbound-proactive-media',
+                quotedRef: {
+                    targetDirection: 'inbound',
+                    key: 'msgId',
+                    value: 'msg_in_media_1',
+                },
                 delivery: expect.objectContaining({
                     processQueryKey: 'q_voice_2',
                     kind: 'proactive-media',
