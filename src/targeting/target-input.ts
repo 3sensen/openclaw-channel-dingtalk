@@ -49,10 +49,10 @@ export function looksLikeDingTalkTargetId(raw: string, normalized?: string): boo
   if (/^\+?\d{6,}$/.test(candidate)) {
     return true;
   }
-  if (/^[a-z0-9]{16,}$/i.test(candidate)) {
+  if (/^[A-Za-z0-9+/=]{16,}$/.test(candidate) && /[+/=]/.test(candidate)) {
     return true;
   }
-  if (/^[A-Za-z0-9+/=]{16,}$/.test(candidate) && /[+/=]/.test(candidate)) {
+  if (/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{24,}$/.test(candidate)) {
     return true;
   }
   if (/^[A-Za-z0-9_-]{24,}$/.test(candidate) && /\d/.test(candidate)) {

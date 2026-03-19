@@ -12,6 +12,10 @@ export type DirectoryListParams = {
   runtime?: unknown;
 };
 
+type RuntimeSessionResolver = {
+  resolveStorePath?: (store: unknown, options: { agentId?: string | null | undefined }) => string;
+};
+
 function normalizeDirectoryAccountId(accountId?: string | null): string {
   const resolved = String(accountId || "default").trim();
   return resolved || "default";
@@ -31,18 +35,7 @@ function resolveDirectoryStorePath(params: {
 }): string | undefined {
   const normalizedAccountId = normalizeDirectoryAccountId(params.accountId);
   const runtimeSession = (
-    params.runtime as
-      | {
-          channel?: {
-            session?: {
-              resolveStorePath?: (
-                store: unknown,
-                options: { agentId?: string | null | undefined },
-              ) => string;
-            };
-          };
-        }
-      | undefined
+    params.runtime as { channel?: { session?: RuntimeSessionResolver } } | undefined
   )?.channel?.session;
   if (runtimeSession?.resolveStorePath) {
     return runtimeSession.resolveStorePath(params.cfg.session?.store, {
@@ -90,6 +83,8 @@ export function listDingTalkDirectoryGroups(params: DirectoryListParams): Channe
     return groupEntries;
   }
 
+  // TODO(upstream target-resolver): remove this fallback once bare user labels
+  // can be classified and routed to listPeers() instead of only listGroups().
   // Temporary hack for the current upstream target-resolver flow: bare names
   // are classified as "group" before directory lookup, so user displayName
   // targets never reach listPeers(). Merge users into the resolver-only group

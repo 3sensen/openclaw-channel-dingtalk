@@ -3,6 +3,7 @@ import { readNamespaceJson, writeNamespaceJsonAtomic } from "../persistence-stor
 const TARGET_DIRECTORY_NAMESPACE = "targets.directory";
 const MAX_HISTORICAL_NAMES = 20;
 const MAX_RECENT_CONVERSATIONS = 20;
+const LAST_SEEN_WRITE_THROTTLE_MS = 60 * 1000;
 
 export interface GroupTargetEntry {
   conversationId: string;
@@ -28,6 +29,7 @@ interface TargetDirectoryState {
 }
 
 const inMemoryFallbackState = new Map<string, TargetDirectoryState>();
+const persistedStateCache = new Map<string, TargetDirectoryState>();
 
 function fallbackState(): TargetDirectoryState {
   return {
@@ -49,18 +51,22 @@ function normalizeScopeKey(storePath: string | undefined, accountId: string): st
   return JSON.stringify([storePath || "__memory__", accountId]);
 }
 
-function readState(params: {
-  storePath?: string;
-  accountId: string;
-}): TargetDirectoryState {
+function readState(params: { storePath?: string; accountId: string }): TargetDirectoryState {
+  const scopeKey = normalizeScopeKey(params.storePath, params.accountId);
   if (!params.storePath) {
-    return inMemoryFallbackState.get(normalizeScopeKey(undefined, params.accountId)) || fallbackState();
+    return inMemoryFallbackState.get(scopeKey) || fallbackState();
   }
-  return readNamespaceJson<TargetDirectoryState>(TARGET_DIRECTORY_NAMESPACE, {
+  const cached = persistedStateCache.get(scopeKey);
+  if (cached) {
+    return cached;
+  }
+  const state = readNamespaceJson<TargetDirectoryState>(TARGET_DIRECTORY_NAMESPACE, {
     storePath: params.storePath,
     scope: { accountId: params.accountId },
     fallback: fallbackState(),
   });
+  persistedStateCache.set(scopeKey, state);
+  return state;
 }
 
 function writeState(params: {
@@ -68,10 +74,12 @@ function writeState(params: {
   accountId: string;
   state: TargetDirectoryState;
 }): void {
+  const scopeKey = normalizeScopeKey(params.storePath, params.accountId);
   if (!params.storePath) {
-    inMemoryFallbackState.set(normalizeScopeKey(undefined, params.accountId), params.state);
+    inMemoryFallbackState.set(scopeKey, params.state);
     return;
   }
+  persistedStateCache.set(scopeKey, params.state);
   writeNamespaceJsonAtomic(TARGET_DIRECTORY_NAMESPACE, {
     storePath: params.storePath,
     scope: { accountId: params.accountId },
@@ -79,19 +87,49 @@ function writeState(params: {
   });
 }
 
-function appendUniqueText(list: string[], value: string, maxSize: number): void {
+export function clearTargetDirectoryStateCache(): void {
+  inMemoryFallbackState.clear();
+  persistedStateCache.clear();
+}
+
+function appendUniqueText(list: string[], value: string, maxSize: number): string[] {
   const normalized = normalizeLookup(value);
   if (!normalized) {
-    return;
+    return list;
   }
   const existingIndex = list.findIndex((item) => normalizeLookup(item) === normalized);
   if (existingIndex >= 0) {
-    return;
+    return list;
   }
-  list.push(value.trim());
-  if (list.length > maxSize) {
-    list.splice(0, list.length - maxSize);
+  const nextList = [...list, value.trim()];
+  return nextList.length > maxSize ? nextList.slice(nextList.length - maxSize) : nextList;
+}
+
+function appendUniqueRecentConversation(list: string[], value: string, maxSize: number): string[] {
+  const normalized = normalizeLookup(value);
+  if (!normalized) {
+    return list;
   }
+  const exists = list.some((item) => normalizeLookup(item) === normalized);
+  if (exists) {
+    return list;
+  }
+  const nextList = [...list, value.trim()];
+  return nextList.length > maxSize ? nextList.slice(nextList.length - maxSize) : nextList;
+}
+
+function shouldRefreshLastSeen(
+  existingLastSeen: number | undefined,
+  nextLastSeen: number,
+): boolean {
+  const previous = Number.isFinite(existingLastSeen) ? Number(existingLastSeen) : 0;
+  if (previous <= 0) {
+    return true;
+  }
+  if (nextLastSeen <= previous) {
+    return false;
+  }
+  return nextLastSeen - previous >= LAST_SEEN_WRITE_THROTTLE_MS;
 }
 
 function findUserKeyByIdentifiers(
@@ -133,19 +171,63 @@ export function upsertObservedGroupTarget(params: {
   const nowMs = params.seenAt && Number.isFinite(params.seenAt) ? params.seenAt : Date.now();
   const title = trimValue(params.title) || conversationId;
   const state = readState({ storePath: params.storePath, accountId: params.accountId });
-  const entry = state.groups[conversationId] || {
-    conversationId,
-    currentTitle: title,
-    historicalTitles: [],
-    lastSeenAt: nowMs,
-  };
-  if (normalizeLookup(entry.currentTitle) !== normalizeLookup(title)) {
-    appendUniqueText(entry.historicalTitles, entry.currentTitle, MAX_HISTORICAL_NAMES);
-    entry.currentTitle = title;
+  const existingEntry = state.groups[conversationId];
+
+  if (!existingEntry) {
+    const nextState: TargetDirectoryState = {
+      ...state,
+      groups: {
+        ...state.groups,
+        [conversationId]: {
+          conversationId,
+          currentTitle: title,
+          historicalTitles: [],
+          lastSeenAt: nowMs,
+        },
+      },
+    };
+    writeState({ storePath: params.storePath, accountId: params.accountId, state: nextState });
+    return;
   }
-  entry.lastSeenAt = Math.max(entry.lastSeenAt || 0, nowMs);
-  state.groups[conversationId] = entry;
-  writeState({ storePath: params.storePath, accountId: params.accountId, state });
+
+  const titleChanged = normalizeLookup(existingEntry.currentTitle) !== normalizeLookup(title);
+  const nextHistoricalTitles = titleChanged
+    ? appendUniqueText(
+        existingEntry.historicalTitles,
+        existingEntry.currentTitle,
+        MAX_HISTORICAL_NAMES,
+      )
+    : existingEntry.historicalTitles;
+  const nextLastSeenCandidate = Math.max(existingEntry.lastSeenAt || 0, nowMs);
+  const nextLastSeenAt =
+    titleChanged || nextHistoricalTitles !== existingEntry.historicalTitles
+      ? nextLastSeenCandidate
+      : shouldRefreshLastSeen(existingEntry.lastSeenAt, nextLastSeenCandidate)
+        ? nextLastSeenCandidate
+        : existingEntry.lastSeenAt;
+
+  if (
+    !titleChanged &&
+    nextHistoricalTitles === existingEntry.historicalTitles &&
+    nextLastSeenAt === existingEntry.lastSeenAt
+  ) {
+    return;
+  }
+
+  const nextEntry: GroupTargetEntry = {
+    conversationId,
+    currentTitle: titleChanged ? title : existingEntry.currentTitle,
+    historicalTitles: nextHistoricalTitles,
+    lastSeenAt: nextLastSeenAt,
+  };
+  const nextState: TargetDirectoryState = {
+    ...state,
+    groups: {
+      ...state.groups,
+      [conversationId]: nextEntry,
+    },
+  };
+  writeState({ storePath: params.storePath, accountId: params.accountId, state: nextState });
 }
 
 export function upsertObservedUserTarget(params: {
@@ -173,45 +255,88 @@ export function upsertObservedUserTarget(params: {
     staffId,
     senderId,
   });
-  const entry = existingKey
-    ? state.users[existingKey]
-    : {
-      canonicalUserId,
-      staffId: staffId || undefined,
-      senderId,
-      currentDisplayName: displayName,
-      historicalDisplayNames: [],
-      lastSeenAt: nowMs,
-      lastSeenInConversationIds: [],
+  const existingEntry = existingKey ? state.users[existingKey] : undefined;
+
+  if (!existingEntry) {
+    const nextState: TargetDirectoryState = {
+      ...state,
+      users: {
+        ...state.users,
+        [canonicalUserId]: {
+          canonicalUserId,
+          staffId: staffId || undefined,
+          senderId,
+          currentDisplayName: displayName,
+          historicalDisplayNames: [],
+          lastSeenAt: nowMs,
+          lastSeenInConversationIds: conversationId ? [conversationId] : [],
+        },
+      },
     };
-
-  if (normalizeLookup(entry.currentDisplayName) !== normalizeLookup(displayName)) {
-    appendUniqueText(entry.historicalDisplayNames, entry.currentDisplayName, MAX_HISTORICAL_NAMES);
-    entry.currentDisplayName = displayName;
-  }
-  if (staffId) {
-    entry.staffId = staffId;
-  }
-  entry.senderId = senderId;
-  entry.canonicalUserId = canonicalUserId;
-  entry.lastSeenAt = Math.max(entry.lastSeenAt || 0, nowMs);
-  if (conversationId) {
-    const exists = entry.lastSeenInConversationIds.some(
-      (value) => normalizeLookup(value) === normalizeLookup(conversationId),
-    );
-    if (!exists) {
-      entry.lastSeenInConversationIds.push(conversationId);
-      if (entry.lastSeenInConversationIds.length > MAX_RECENT_CONVERSATIONS) {
-        entry.lastSeenInConversationIds.splice(0, entry.lastSeenInConversationIds.length - MAX_RECENT_CONVERSATIONS);
-      }
-    }
+    writeState({ storePath: params.storePath, accountId: params.accountId, state: nextState });
+    return;
   }
 
-  if (existingKey && existingKey !== canonicalUserId) {
-    delete state.users[existingKey];
+  const displayNameChanged =
+    normalizeLookup(existingEntry.currentDisplayName) !== normalizeLookup(displayName);
+  const nextHistoricalDisplayNames = displayNameChanged
+    ? appendUniqueText(
+        existingEntry.historicalDisplayNames,
+        existingEntry.currentDisplayName,
+        MAX_HISTORICAL_NAMES,
+      )
+    : existingEntry.historicalDisplayNames;
+  const nextConversationIds = conversationId
+    ? appendUniqueRecentConversation(
+        existingEntry.lastSeenInConversationIds,
+        conversationId,
+        MAX_RECENT_CONVERSATIONS,
+      )
+    : existingEntry.lastSeenInConversationIds;
+  const normalizedStaffId = staffId || undefined;
+  const staffIdChanged = existingEntry.staffId !== normalizedStaffId;
+  const senderIdChanged = existingEntry.senderId !== senderId;
+  const canonicalUserIdChanged =
+    existingEntry.canonicalUserId !== canonicalUserId || existingKey !== canonicalUserId;
+  const metadataChanged =
+    displayNameChanged ||
+    nextHistoricalDisplayNames !== existingEntry.historicalDisplayNames ||
+    nextConversationIds !== existingEntry.lastSeenInConversationIds ||
+    staffIdChanged ||
+    senderIdChanged ||
+    canonicalUserIdChanged;
+  const nextLastSeenCandidate = Math.max(existingEntry.lastSeenAt || 0, nowMs);
+  const nextLastSeenAt = metadataChanged
+    ? nextLastSeenCandidate
+    : shouldRefreshLastSeen(existingEntry.lastSeenAt, nextLastSeenCandidate)
+      ? nextLastSeenCandidate
+      : existingEntry.lastSeenAt;
+
+  if (!metadataChanged && nextLastSeenAt === existingEntry.lastSeenAt) {
+    return;
   }
-  state.users[canonicalUserId] = entry;
-  writeState({ storePath: params.storePath, accountId: params.accountId, state });
+
+  const nextEntry: UserTargetEntry = {
+    canonicalUserId,
+    staffId: normalizedStaffId,
+    senderId,
+    currentDisplayName: displayNameChanged ? displayName : existingEntry.currentDisplayName,
+    historicalDisplayNames: nextHistoricalDisplayNames,
+    lastSeenAt: nextLastSeenAt,
+    lastSeenInConversationIds: nextConversationIds,
+  };
+
+  const nextUsers =
+    existingKey && existingKey !== canonicalUserId
+      ? Object.fromEntries(Object.entries(state.users).filter(([key]) => key !== existingKey))
+      : { ...state.users };
+  nextUsers[canonicalUserId] = nextEntry;
+
+  const nextState: TargetDirectoryState = {
+    ...state,
+    users: nextUsers,
+  };
+  writeState({ storePath: params.storePath, accountId: params.accountId, state: nextState });
 }
 
 function matchesGroupQuery(entry: GroupTargetEntry, query: string): boolean {
@@ -219,11 +344,7 @@ function matchesGroupQuery(entry: GroupTargetEntry, query: string): boolean {
   if (!normalizedQuery) {
     return true;
   }
-  const candidates = [
-    entry.conversationId,
-    entry.currentTitle,
-    ...entry.historicalTitles,
-  ];
+  const candidates = [entry.conversationId, entry.currentTitle, ...entry.historicalTitles];
   return candidates.some((value) => normalizeLookup(value) === normalizedQuery);
 }
 
