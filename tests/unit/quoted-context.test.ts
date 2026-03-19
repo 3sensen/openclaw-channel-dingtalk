@@ -192,7 +192,6 @@ describe("quoted-context", () => {
       ],
     });
   });
-
   it("truncates the chain when maxDepth is exceeded", () => {
     upsertInboundMessageContext({
       accountId: "main",
