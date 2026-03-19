@@ -861,17 +861,6 @@ export async function finishAICard(
       options.quotedRef,
       log,
     );
-    if (primaryConversationId !== card.conversationId) {
-      cacheCardContentByProcessQueryKey(
-        card.accountId,
-        card.conversationId,
-        card.processQueryKey,
-        content,
-        card.storePath,
-        options.quotedRef,
-        log,
-      );
-    }
   }
 }
 
