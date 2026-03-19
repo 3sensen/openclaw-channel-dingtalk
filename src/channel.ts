@@ -331,8 +331,8 @@ function listDingTalkDirectoryGroups(params: DirectoryListParams): ChannelDirect
     query: filterByQuery ? (params.query ?? undefined) : undefined,
     limit: filterByQuery ? normalizeDirectoryLimit(params.limit) : undefined,
   });
-  const groupEntries = groups.map((entry) => ({
-    kind: "group",
+  const groupEntries: ChannelDirectoryEntry[] = groups.map((entry) => ({
+    kind: "group" as const,
     id: resolveOriginalPeerId(entry.conversationId),
     name: entry.currentTitle,
     handle: entry.conversationId,
@@ -352,7 +352,7 @@ function listDingTalkDirectoryGroups(params: DirectoryListParams): ChannelDirect
     storePath,
     accountId,
   });
-  const userEntries = users.map((entry) => ({
+  const userEntries: ChannelDirectoryEntry[] = users.map((entry) => ({
     kind: "user" as const,
     id: entry.canonicalUserId,
     name: entry.currentDisplayName,

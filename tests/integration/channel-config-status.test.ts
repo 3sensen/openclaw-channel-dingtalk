@@ -261,6 +261,13 @@ describe("channel config + status helpers", () => {
         expect(resolveStorePath).toHaveBeenCalledWith(undefined, { agentId: "default" });
         expect(groups).toHaveLength(3);
         expect(groups.map((entry) => entry.id)).toEqual(expect.arrayContaining(["cidDevTeam", "cidOpsTeam", "staff_bob"]));
+        expect(groups).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: "user",
+                id: "staff_bob",
+                name: "Bob",
+            }),
+        ]));
         expect(filteredGroups).toEqual([
             expect.objectContaining({
                 kind: "group",
