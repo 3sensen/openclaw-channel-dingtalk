@@ -3499,7 +3499,7 @@ describe("inbound-handler", () => {
     }
   });
 
-  it("handleDingTalkMessage classifies emoji reaction when ackReaction=emoji", async () => {
+  it("handleDingTalkMessage attaches the fixed thinking reaction when ackReaction=emoji", async () => {
     vi.useFakeTimers();
     mockedAxiosPost.mockResolvedValue({ data: { success: true } } as any);
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
@@ -3540,11 +3540,11 @@ describe("inbound-handler", () => {
         expect.objectContaining({
           openMsgId: "m5_emoji_ackreaction",
           openConversationId: "cid_ok",
-          emotionName: "叽 (๑•̀ㅂ•́)و✧",
+          emotionName: "🤔思考中",
           textEmotion: expect.objectContaining({
             emotionId: "2659900",
-            emotionName: "叽 (๑•̀ㅂ•́)و✧",
-            text: "叽 (๑•̀ㅂ•́)و✧",
+            emotionName: "🤔思考中",
+            text: "🤔思考中",
           }),
         }),
         expect.any(Object),
@@ -3555,10 +3555,137 @@ describe("inbound-handler", () => {
         expect.objectContaining({
           openMsgId: "m5_emoji_ackreaction",
           openConversationId: "cid_ok",
+          emotionName: "🤔思考中",
+        }),
+        expect.any(Object),
+      );
+    } finally {
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("handleDingTalkMessage lets kaomoji seed the initial reaction and still switch on tool events", async () => {
+    vi.useFakeTimers();
+    mockedAxiosPost.mockResolvedValue({ data: { success: true } } as any);
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+    const runtime = buildRuntime();
+    let agentEventListener: ((event: unknown) => void) | undefined;
+    runtime.events = {
+      onAgentEvent: vi.fn((listener: (event: unknown) => void) => {
+        agentEventListener = listener;
+        return () => {
+          agentEventListener = undefined;
+        };
+      }),
+    } as any;
+    runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi
+      .fn()
+      .mockImplementation(async ({ dispatcherOptions, replyOptions }) => {
+        agentEventListener?.({
+          stream: "lifecycle",
+          data: {
+            phase: "start",
+            runId: "run_kaomoji",
+          },
+        });
+        agentEventListener?.({
+          stream: "tool",
+          data: {
+            phase: "start",
+            name: "exec",
+            args: { cmd: "pwd" },
+            runId: "run_kaomoji",
+            toolCallId: "tool_1",
+          },
+        });
+        await replyOptions?.onReasoningStream?.({ text: "thinking" });
+        await dispatcherOptions.deliver({ text: "final output" }, { kind: "final" });
+        return { queuedFinal: "queued final" };
+      });
+    shared.getRuntimeMock.mockReturnValue(runtime);
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "你真棒，快夸夸我",
+      messageType: "text",
+    });
+
+    try {
+      const handlePromise = handleDingTalkMessage({
+        cfg: {},
+        accountId: "main",
+        sessionWebhook: "https://session.webhook",
+        log: undefined,
+        dingtalkConfig: {
+          clientId: "ding_client",
+          clientSecret: "secret",
+          dmPolicy: "open",
+          messageType: "markdown",
+          ackReaction: "kaomoji",
+        } as any,
+        data: {
+          msgId: "m5_kaomoji_ackreaction",
+          msgtype: "text",
+          text: { content: "你真棒，快夸夸我" },
+          conversationType: "1",
+          conversationId: "cid_ok",
+          senderId: "user_1",
+          chatbotUserId: "bot_1",
+          sessionWebhook: "https://session.webhook",
+          createAt: Date.now(),
+        },
+      } as any);
+      await vi.advanceTimersByTimeAsync(1200);
+      await handlePromise;
+
+      expect(mockedAxiosPost).toHaveBeenNthCalledWith(
+        1,
+        "https://api.dingtalk.com/v1.0/robot/emotion/reply",
+        expect.objectContaining({
+          openMsgId: "m5_kaomoji_ackreaction",
+          openConversationId: "cid_ok",
+          emotionName: "叽 (๑•̀ㅂ•́)و✧",
+          textEmotion: expect.objectContaining({
+            emotionName: "叽 (๑•̀ㅂ•́)و✧",
+            text: "叽 (๑•̀ㅂ•́)و✧",
+          }),
+        }),
+        expect.any(Object),
+      );
+      expect(mockedAxiosPost).toHaveBeenNthCalledWith(
+        2,
+        "https://api.dingtalk.com/v1.0/robot/emotion/recall",
+        expect.objectContaining({
+          openMsgId: "m5_kaomoji_ackreaction",
+          openConversationId: "cid_ok",
           emotionName: "叽 (๑•̀ㅂ•́)و✧",
         }),
         expect.any(Object),
       );
+      expect(mockedAxiosPost).toHaveBeenNthCalledWith(
+        3,
+        "https://api.dingtalk.com/v1.0/robot/emotion/reply",
+        expect.objectContaining({
+          openMsgId: "m5_kaomoji_ackreaction",
+          openConversationId: "cid_ok",
+          emotionName: "🛠️",
+          textEmotion: expect.objectContaining({
+            emotionName: "🛠️",
+            text: "🛠️",
+          }),
+        }),
+        expect.any(Object),
+      );
+      expect(mockedAxiosPost).toHaveBeenNthCalledWith(
+        4,
+        "https://api.dingtalk.com/v1.0/robot/emotion/recall",
+        expect.objectContaining({
+          openMsgId: "m5_kaomoji_ackreaction",
+          openConversationId: "cid_ok",
+          emotionName: "🛠️",
+        }),
+        expect.any(Object),
+      );
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(4);
     } finally {
       randomSpy.mockRestore();
       vi.useRealTimers();
