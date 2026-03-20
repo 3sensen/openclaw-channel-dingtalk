@@ -19,14 +19,24 @@ const KEYWORDS = {
 const POLITE_EXCLUSIONS = ["别客气", "别介意", "别见怪", "别担心", "别着急"] as const;
 
 const EMOJIS: EmojiMap = {
-  "夸奖": ["(๑•̀ㅂ•́)و✧", "(ﾉ≧∀≦)ﾉ", "٩(๑>◡<๑)۶", "(★▽★)", "(⌒▽⌒)☆", "(*≧ω≦)", "(ง •_•)ง", "ヾ(≧▽≦*)o"],
+  // DingTalk `emotion/reply` does not accept every visually valid kaomoji.
+  // Keep only the strings that survived repeated direct API retests against
+  // the live endpoint using a real message target. Removed as unstable/bad:
+  // `٩(๑>◡<๑)۶`.
+  "夸奖": ["(๑•̀ㅂ•́)و✧", "(ﾉ≧∀≦)ﾉ", "(★▽★)", "(⌒▽⌒)☆", "(*≧ω≦)", "(ง •_•)ง", "ヾ(≧▽≦*)o"],
   "责怪": ["(╬ Ò﹏Ó)", "(╯°□°）╯", "(▼皿▼#)", "(｡•́︿•̀｡)", "(╥﹏╥)", "ヽ(｀Д´)ﾉ", "(＃＞＜)", "(；′⌒`)"],
   // Keep command kaomoji limited to strings that passed local
-  // DingTalk emotion/reply verification. `┌（┌ *｀д´）┐` was removed
-  // after repeated 500 responses from the DingTalk side.
-  "命令": ["(¬_¬)", "(｀ε´)", "(＃｀Д´)", "(●｀∀´●)", "(｀д´)", "(•̀へ •́ ╮ )", "(￣ω￣;)"],
-  "叙事": ["(。・ω・。)", "(￣▽￣)", "(´• ω •`)", "(・・?)", "(。_。)", "(￣ω￣)", "(´▽`)", "(=_=)"],
-  "请求": ["(っ´∀｀)っ", "(๑•̀ω•́๑)✧", "(づ｡◕‿‿◕｡)づ", "(p≧w≦q)", "(♡˙︶˙♡)", "(⁄ ⁄•⁄ω⁄•⁄ ⁄)", "(´;ω;｀)", "(人•ᴗ•✿)"],
+  // DingTalk emotion/reply verification. Removed as unstable/bad after
+  // repeated direct API retests: `┌（┌ *｀д´）┐`, `(•̀へ •́ ╮ )`.
+  "命令": ["(¬_¬)", "(｀ε´)", "(＃｀Д´)", "(●｀∀´●)", "(｀д´)", "(￣ω￣;)"],
+  // Narrative kaomoji must also stay within the subset accepted by
+  // DingTalk emotion/reply. Removed as unstable/bad after repeated direct
+  // API retests: `(´• ω •`)`.
+  "叙事": ["(。・ω・。)", "(￣▽￣)", "(・・?)", "(。_。)", "(￣ω￣)", "(´▽`)", "(=_=)"],
+  // Request kaomoji must exclude strings that stayed unstable across
+  // repeated direct API retests. Removed as unstable/bad:
+  // `(づ｡◕‿‿◕｡)づ`, `(⁄ ⁄•⁄ω⁄•⁄ ⁄)`.
+  "请求": ["(っ´∀｀)っ", "(๑•̀ω•́๑)✧", "(p≧w≦q)", "(♡˙︶˙♡)", "(´;ω;｀)", "(人•ᴗ•✿)"],
   "未知": ["(•̀_•́)", "(；一_一)", "(???)"],
 };
 
