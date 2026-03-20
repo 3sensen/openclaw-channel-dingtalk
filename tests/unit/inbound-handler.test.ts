@@ -2006,6 +2006,106 @@ describe("inbound-handler", () => {
     expect(finalized.UntrustedContext).toBeUndefined();
   });
 
+  it("uses cached attachment excerpts as ReplyToBody for quoted document messages", async () => {
+    const baseTs = Date.now();
+    const runtime = buildRuntime();
+    runtime.channel.session.resolveStorePath = vi
+      .fn()
+      .mockReturnValueOnce("/tmp/store.json")
+      .mockReturnValueOnce("/tmp/agent-store.json");
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.upsertInboundMessageContext({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_ok",
+      msgId: "quoted_doc_1",
+      createdAt: baseTs - 1000,
+      messageType: "interactiveCardFile",
+      text: "[钉钉文档]",
+      attachmentText: "这是从 PDF 抽出的首段正文",
+      attachmentTextSource: "pdf",
+      attachmentFileName: "manual.pdf",
+      topic: null,
+    });
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "继续读这个文档",
+      messageType: "text",
+      quoted: {
+        msgId: "quoted_doc_1",
+        previewText: "[钉钉文档]",
+        previewMessageType: "interactiveCardFile",
+      },
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { dmPolicy: "open", messageType: "markdown" } as any,
+      data: {
+        msgId: "m_quote_doc_excerpt_1",
+        msgtype: "text",
+        text: { content: "继续读这个文档", isReplyMsg: true },
+        originalMsgId: "quoted_doc_1",
+        conversationType: "1",
+        conversationId: "cid_ok",
+        senderId: "user_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: baseTs,
+      },
+    } as any);
+
+    const finalized = runtime.channel.reply.finalizeInboundContext.mock.calls[0]?.[0];
+    expect(finalized.ReplyToBody).toBe("这是从 PDF 抽出的首段正文");
+  });
+
+  it("injects single-hop ReplyTo fields from quoted preview when the store misses", async () => {
+    const runtime = buildRuntime();
+    runtime.channel.session.resolveStorePath = vi
+      .fn()
+      .mockReturnValueOnce("/tmp/store.json")
+      .mockReturnValueOnce("/tmp/agent-store.json");
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "继续这个话题",
+      messageType: "text",
+      quoted: {
+        msgId: "missing_preview_msg",
+        previewText: "这是事件里自带的一跳引用预览",
+        previewMessageType: "text",
+      },
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { dmPolicy: "open", messageType: "markdown" } as any,
+      data: {
+        msgId: "m_quote_preview_only_1",
+        msgtype: "text",
+        text: { content: "继续这个话题", isReplyMsg: true },
+        originalMsgId: "missing_preview_msg",
+        conversationType: "1",
+        conversationId: "cid_ok",
+        senderId: "user_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    const finalized = runtime.channel.reply.finalizeInboundContext.mock.calls[0]?.[0];
+    expect(finalized.ReplyToId).toBe("missing_preview_msg");
+    expect(finalized.ReplyToBody).toBe("这是事件里自带的一跳引用预览");
+    expect(finalized.ReplyToSender).toBeUndefined();
+    expect(finalized.ReplyToIsQuote).toBe(true);
+    expect(finalized.UntrustedContext).toBeUndefined();
+  });
+
   it("injects a single JSON UntrustedContext block for multi-hop quoted chains starting at hop 2", async () => {
     const baseTs = Date.now();
     const runtime = buildRuntime();
@@ -2406,7 +2506,7 @@ describe("inbound-handler", () => {
     );
   });
 
-  it("handleDingTalkMessage injects extracted attachment text into inbound context", async () => {
+  it("handleDingTalkMessage stores extracted attachment text without injecting it into the current inbound context", async () => {
     const runtime = buildRuntime();
     shared.getRuntimeMock.mockReturnValueOnce(runtime);
     shared.extractMessageContentMock.mockReturnValueOnce({
@@ -2456,10 +2556,20 @@ describe("inbound-handler", () => {
     });
     expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        RawBody: "[钉钉文档]\n\n\n\n[附件内容摘录]\n第一段\n第二段",
-        CommandBody: "[钉钉文档]\n\n\n\n[附件内容摘录]\n第一段\n第二段",
+        RawBody: "[钉钉文档]\n\n",
+        CommandBody: "[钉钉文档]\n\n",
       }),
     );
+    const restored = messageContextStore.resolveByMsgId({
+      accountId: "main",
+      storePath: "/tmp/store.json",
+      conversationId: "cid_dm_extract",
+      msgId: "doc_origin_msg_extract",
+    });
+    expect(restored?.attachmentText).toBe("第一段\n第二段");
+    expect(restored?.attachmentTextSource).toBe("pdf");
+    expect(restored?.attachmentTextTruncated).toBeUndefined();
+    expect(restored?.attachmentFileName).toBe("manual.pdf");
   });
 
   it("handleDingTalkMessage keeps processing when attachment extraction fails", async () => {
@@ -2587,6 +2697,144 @@ describe("inbound-handler", () => {
         },
       }),
     );
+  });
+
+  it("handleDingTalkMessage passes the recovered quoted filename into attachment extraction", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.upsertInboundMessageContext({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_dm_quoted_doc_name",
+      msgId: "doc_origin_msg_quoted_name",
+      createdAt: Date.now(),
+      messageType: "interactiveCardFile",
+      media: {
+        spaceId: "space_doc_name",
+        fileId: "file_doc_name",
+      },
+      ttlMs: messageContextStore.DEFAULT_MEDIA_CONTEXT_TTL_MS,
+      topic: null,
+    });
+    messageContextStore.clearMessageContextCacheForTest();
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "继续看这个文档",
+      messageType: "text",
+      quoted: {
+        isQuotedDocCard: true,
+        msgId: "doc_origin_msg_quoted_name",
+        previewFileName: "quoted-manual.pdf",
+      },
+    });
+    shared.downloadGroupFileMock.mockResolvedValueOnce({
+      path: "/tmp/.openclaw/media/inbound/doc-card-quoted.bin",
+      mimeType: "application/octet-stream",
+    });
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "摘录首段",
+      sourceType: "pdf",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { dmPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "doc_quote_msg_filename",
+        msgtype: "text",
+        text: { content: "继续看这个文档", isReplyMsg: true },
+        originalMsgId: "doc_origin_msg_quoted_name",
+        conversationType: "1",
+        conversationId: "cid_dm_quoted_doc_name",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    expect(shared.extractAttachmentTextMock).toHaveBeenCalledWith({
+      path: "/tmp/.openclaw/media/inbound/doc-card-quoted.bin",
+      mimeType: "application/octet-stream",
+      fileName: "quoted-manual.pdf",
+    });
+  });
+
+  it("handleDingTalkMessage keeps recovered attachment excerpts alive for old quoted messages", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-20T00:00:00.000Z"));
+    try {
+      const runtime = buildRuntime();
+      shared.getRuntimeMock.mockReturnValueOnce(runtime);
+      messageContextStore.clearMessageContextCacheForTest();
+      const oldFileCreatedAt = Date.now() - 40 * 24 * 60 * 60 * 1000;
+      shared.extractMessageContentMock.mockReturnValueOnce({
+        text: "继续这份老文档",
+        messageType: "text",
+        quoted: {
+          isQuotedDocCard: true,
+          msgId: "old_doc_origin_msg",
+          fileCreatedAt: oldFileCreatedAt,
+          previewFileName: "history.pdf",
+        },
+      });
+      shared.resolveQuotedFileMock.mockResolvedValueOnce({
+        media: {
+          path: "/tmp/.openclaw/media/inbound/doc-card-old.bin",
+          mimeType: "application/pdf",
+        },
+        spaceId: "space_old_doc",
+        fileId: "file_old_doc",
+        name: "history.pdf",
+      });
+      shared.extractAttachmentTextMock.mockResolvedValueOnce({
+        text: "老文档首段",
+        sourceType: "pdf",
+        truncated: false,
+      });
+
+      await handleDingTalkMessage({
+        cfg: {},
+        accountId: "main",
+        sessionWebhook: "https://session.webhook",
+        log: undefined,
+        dingtalkConfig: {
+          groupPolicy: "open",
+          messageType: "markdown",
+          robotCode: "robot_1",
+          journalTTLDays: 30,
+        } as any,
+        data: {
+          msgId: "doc_quote_msg_old",
+          msgtype: "text",
+          text: { content: "继续这份老文档", isReplyMsg: true },
+          originalMsgId: "old_doc_origin_msg",
+          conversationType: "2",
+          conversationId: "cid_old_quote_doc",
+          senderId: "user_1",
+          senderStaffId: "staff_1",
+          chatbotUserId: "bot_1",
+          sessionWebhook: "https://session.webhook",
+          createAt: Date.now(),
+        },
+      } as any);
+
+      const restored = messageContextStore.resolveByMsgId({
+        accountId: "main",
+        storePath: "/tmp/store.json",
+        conversationId: "cid_old_quote_doc",
+        msgId: "old_doc_origin_msg",
+        nowMs: Date.now() + 1_000,
+      });
+      expect(restored?.attachmentText).toBe("老文档首段");
+      expect(restored?.attachmentFileName).toBe("history.pdf");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("handleDingTalkMessage degrades quoted doc card when cached metadata is unavailable", async () => {
