@@ -171,6 +171,22 @@ pnpm debug:session judge --session-dir <sessionDir>
 
 完整工作流、session 目录结构和 operator/桌面 agent 边界说明见 [`docs/real-device-debugging.zh-CN.md`](docs/real-device-debugging.zh-CN.md)。
 
+如果某条真机验证需要沉淀为仓库内可复用资产，优先使用更高层的 scenario-driven harness：
+
+```bash
+pnpm real-device:verify --scenario pr389-preview-store-miss
+pnpm real-device:verify --resume <sessionDir>
+```
+
+推荐这样理解两层入口：
+
+- `pnpm debug:session ...`：低层、临时性的真机调试原语
+- `pnpm real-device:verify ...`：高层、可版本化的场景驱动真机验证
+
+如果你的 PR 引入或修改了一个应该被重复验证的真机行为，优先在 `scripts/real-device-scenarios/scenarios/` 下新增或更新 scenario，而不是只把手工步骤写在 PR 描述里。
+
+scenario-driven harness 的说明文档见 [`docs/real-device-harness.zh-CN.md`](docs/real-device-harness.zh-CN.md)。
+
 ## 按问题类型补充验证
 
 ### 消息丢失或 Stream 投递语义改动（#104）

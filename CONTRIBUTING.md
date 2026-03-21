@@ -171,6 +171,22 @@ When you use this flow, attach or summarize these artifacts in the PR when relev
 
 The full workflow and session artifact model are documented in [`docs/real-device-debugging.md`](docs/real-device-debugging.md).
 
+When a runtime validation should become a reusable repository asset, prefer the higher-level scenario-driven harness:
+
+```bash
+pnpm real-device:verify --scenario pr389-preview-store-miss
+pnpm real-device:verify --resume <sessionDir>
+```
+
+Recommended division of responsibilities:
+
+- `pnpm debug:session ...`: low-level ad-hoc debugging primitive
+- `pnpm real-device:verify ...`: scenario-driven, versioned real-device verification
+
+If your PR introduces or changes a real-device behavior that should be repeatable, prefer adding or updating a scenario under `scripts/real-device-scenarios/scenarios/` instead of leaving the procedure only in the PR description.
+
+The scenario-driven harness guide lives in [`docs/real-device-harness.md`](docs/real-device-harness.md).
+
 ## Special Validation By Issue Type
 
 ### Message loss or stream delivery changes (#104)
