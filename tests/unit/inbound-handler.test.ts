@@ -2770,6 +2770,72 @@ describe("inbound-handler", () => {
     });
   });
 
+  it("handleDingTalkMessage prefers stored quoted filenames over preview filenames during cached doc extraction", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.upsertInboundMessageContext({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_dm_cached_doc_name",
+      msgId: "doc_origin_msg_cached_name",
+      createdAt: Date.now(),
+      messageType: "interactiveCardFile",
+      media: {
+        spaceId: "space_doc_cached_name",
+        fileId: "file_doc_cached_name",
+      },
+      attachmentFileName: "stored-manual.pdf",
+      ttlMs: messageContextStore.DEFAULT_MEDIA_CONTEXT_TTL_MS,
+      topic: null,
+    });
+    messageContextStore.clearMessageContextCacheForTest();
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "继续看这个文档",
+      messageType: "text",
+      quoted: {
+        isQuotedDocCard: true,
+        msgId: "doc_origin_msg_cached_name",
+        previewFileName: "preview-manual.tmp",
+      },
+    });
+    shared.downloadGroupFileMock.mockResolvedValueOnce({
+      path: "/tmp/.openclaw/media/inbound/doc-card-cached.bin",
+      mimeType: "application/octet-stream",
+    });
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "摘录首段",
+      sourceType: "pdf",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { dmPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "doc_quote_msg_cached_filename",
+        msgtype: "text",
+        text: { content: "继续看这个文档", isReplyMsg: true },
+        originalMsgId: "doc_origin_msg_cached_name",
+        conversationType: "1",
+        conversationId: "cid_dm_cached_doc_name",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    expect(shared.extractAttachmentTextMock).toHaveBeenCalledWith({
+      path: "/tmp/.openclaw/media/inbound/doc-card-cached.bin",
+      mimeType: "application/octet-stream",
+      fileName: "stored-manual.pdf",
+    });
+  });
+
   it("handleDingTalkMessage falls back to resolved group filenames for attachment extraction", async () => {
     const runtime = buildRuntime();
     shared.getRuntimeMock.mockReturnValueOnce(runtime);
@@ -2830,6 +2896,69 @@ describe("inbound-handler", () => {
       msgId: "group_file_msg_name",
     });
     expect(restored?.attachmentFileName).toBe("fallback-name.sql");
+  });
+
+  it("handleDingTalkMessage prefers resolved group filenames over preview filenames for quoted file extraction", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.clearMessageContextCacheForTest();
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "群聊文件",
+      messageType: "text",
+      quoted: {
+        isQuotedFile: true,
+        msgId: "group_file_msg_name_conflict",
+        fileCreatedAt: 1772863284581,
+        previewFileName: "preview-name.tmp",
+      },
+    });
+    shared.resolveQuotedFileMock.mockResolvedValueOnce({
+      media: {
+        path: "/tmp/.openclaw/media/inbound/group-file-conflict.bin",
+        mimeType: "application/octet-stream",
+      },
+      spaceId: "space_group_3",
+      fileId: "dentry_group_3",
+      name: "resolved-name.sql",
+    });
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "select 1;",
+      sourceType: "text",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { groupPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "m_group_file_name_conflict",
+        msgtype: "text",
+        text: { content: "群聊文件", isReplyMsg: true },
+        conversationType: "2",
+        conversationId: "cid_group_name_conflict",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    expect(shared.extractAttachmentTextMock).toHaveBeenCalledWith({
+      path: "/tmp/.openclaw/media/inbound/group-file-conflict.bin",
+      mimeType: "application/octet-stream",
+      fileName: "resolved-name.sql",
+    });
+    const restored = messageContextStore.resolveByMsgId({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_group_name_conflict",
+      msgId: "group_file_msg_name_conflict",
+    });
+    expect(restored?.attachmentFileName).toBe("resolved-name.sql");
   });
 
   it("handleDingTalkMessage keeps recovered attachment excerpts alive for old quoted messages", async () => {
@@ -2903,6 +3032,69 @@ describe("inbound-handler", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("handleDingTalkMessage prefers resolved group filenames over preview filenames for quoted doc extraction", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.clearMessageContextCacheForTest();
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "群聊文档",
+      messageType: "text",
+      quoted: {
+        isQuotedDocCard: true,
+        msgId: "group_doc_msg_name_conflict",
+        fileCreatedAt: 1772863284581,
+        previewFileName: "preview-doc.tmp",
+      },
+    });
+    shared.resolveQuotedFileMock.mockResolvedValueOnce({
+      media: {
+        path: "/tmp/.openclaw/media/inbound/group-doc-conflict.bin",
+        mimeType: "application/octet-stream",
+      },
+      spaceId: "space_group_doc_3",
+      fileId: "dentry_group_doc_3",
+      name: "resolved-doc.pdf",
+    });
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "doc body",
+      sourceType: "pdf",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { groupPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "m_group_doc_name_conflict",
+        msgtype: "text",
+        text: { content: "群聊文档", isReplyMsg: true },
+        conversationType: "2",
+        conversationId: "cid_group_doc_name_conflict",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    expect(shared.extractAttachmentTextMock).toHaveBeenCalledWith({
+      path: "/tmp/.openclaw/media/inbound/group-doc-conflict.bin",
+      mimeType: "application/octet-stream",
+      fileName: "resolved-doc.pdf",
+    });
+    const restored = messageContextStore.resolveByMsgId({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_group_doc_name_conflict",
+      msgId: "group_doc_msg_name_conflict",
+    });
+    expect(restored?.attachmentFileName).toBe("resolved-doc.pdf");
   });
 
   it("handleDingTalkMessage degrades quoted doc card when cached metadata is unavailable", async () => {

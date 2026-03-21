@@ -1286,7 +1286,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       attachmentContextMsgId = quotedRecord?.msgId || content.quoted.msgId || data.msgId;
       attachmentContextCreatedAt = quotedRecord?.createdAt || content.quoted.fileCreatedAt || data.createAt;
       attachmentContextMessageType = quotedRecord?.messageType || "file";
-      attachmentContextFileName = content.quoted.previewFileName || quotedRecord?.attachmentFileName;
+      attachmentContextFileName = quotedRecord?.attachmentFileName || content.quoted.previewFileName;
       fileResolved = true;
     }
 
@@ -1307,7 +1307,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         attachmentContextMsgId = content.quoted.msgId || data.msgId;
         attachmentContextCreatedAt = content.quoted.fileCreatedAt || data.createAt;
         attachmentContextMessageType = "file";
-        attachmentContextFileName = content.quoted.previewFileName || resolved.name;
+        attachmentContextFileName = resolved.name || content.quoted.previewFileName;
         fileResolved = true;
         log?.debug?.(
           `[DingTalk][QuotedRef] Recovered quoted file from group file fallback ` +
@@ -1360,7 +1360,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       attachmentContextCreatedAt = quotedRecord?.createdAt || content.quoted.fileCreatedAt || data.createAt;
       attachmentContextMessageType =
         quotedRecord?.messageType || content.quoted.previewMessageType || "interactiveCardFile";
-      attachmentContextFileName = content.quoted.previewFileName || quotedRecord?.attachmentFileName;
+      attachmentContextFileName = quotedRecord?.attachmentFileName || content.quoted.previewFileName;
       docResolved = true;
     }
 
@@ -1380,7 +1380,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         attachmentContextMsgId = content.quoted.msgId || data.msgId;
         attachmentContextCreatedAt = content.quoted.fileCreatedAt || data.createAt;
         attachmentContextMessageType = "interactiveCardFile";
-        attachmentContextFileName = content.quoted.previewFileName || resolved.name;
+        attachmentContextFileName = resolved.name || content.quoted.previewFileName;
         docResolved = true;
         log?.debug?.(
           `[DingTalk][QuotedRef] Recovered quoted doc card from group file fallback ` +
