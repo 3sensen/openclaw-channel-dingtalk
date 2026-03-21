@@ -173,6 +173,11 @@ pnpm debug:session observe \
 
 `observe` normalizes screenshot paths into session-relative paths before writing them into `manifest.json`.
 
+Ready-to-copy examples:
+
+- `docs/examples/real-device-debug-observation-visible.example.json`
+- `docs/examples/real-device-debug-observation-timeout.example.json`
+
 ### 4. Judge The Session
 
 After logs and observations are available, run:
@@ -251,6 +256,10 @@ When your change affects runtime behavior, include:
 - whether the reply was visible in the client
 - the attached `summary.md` or a short excerpt from it
 - key screenshots when visibility is the disputed layer
+
+If you want a preformatted write-up template, start from:
+
+- `docs/examples/real-device-debug-session-report.zh-CN.example.md`
 
 ## Related Files
 

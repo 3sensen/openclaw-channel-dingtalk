@@ -171,6 +171,11 @@ pnpm debug:session observe \
 
 `observe` 会把截图路径归一化成相对 session 目录的路径后写回 `manifest.json`。
 
+可直接复制的示例模板：
+
+- `docs/examples/real-device-debug-observation-visible.example.json`
+- `docs/examples/real-device-debug-observation-timeout.example.json`
+
 ### 4. 判定 Session
 
 ```bash
@@ -247,6 +252,10 @@ pnpm debug:session run \
 - 回复是否在钉钉客户端中真正可见
 - `summary.md` 或其中的关键摘录
 - 如果争议点在“客户端是否可见”，附关键截图
+
+如果你想快速整理一份调试记录，可直接从下面这个模板开始：
+
+- `docs/examples/real-device-debug-session-report.zh-CN.example.md`
 
 ## 相关文件
 
