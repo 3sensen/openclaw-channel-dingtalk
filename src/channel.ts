@@ -212,23 +212,30 @@ function readBooleanLikeParam(params: Record<string, unknown>, key: string): boo
   return undefined;
 }
 
+function describeDingTalkMessageTool(cfg: OpenClawConfig): {
+  actions: readonly ["send"] | readonly [];
+  capabilities: readonly ["cards"] | readonly [];
+  schema: null;
+} {
+  const config = getConfig(cfg);
+  const configured = Boolean(config.clientId && config.clientSecret);
+  if (!configured && !(config.accounts && Object.keys(config.accounts).length > 0)) {
+    return { actions: [], capabilities: [], schema: null };
+  }
+  const hasCardMode =
+    config.messageType === "card" ||
+    (config.accounts && Object.values(config.accounts).some((a) => a?.messageType === "card"));
+  return {
+    actions: ["send"] as const,
+    capabilities: hasCardMode ? (["cards"] as const) : [],
+    schema: null,
+  };
+}
+
 const dingtalkMessageActions: ChannelMessageActionAdapter = {
-  describeMessageTool: ({ cfg }) => {
-    const config = getConfig(cfg);
-    const configured = Boolean(config.clientId && config.clientSecret);
-    if (!configured && !(config.accounts && Object.keys(config.accounts).length > 0)) {
-      return { actions: [], capabilities: [], schema: null };
-    }
-    const hasCardMode =
-      config.messageType === "card" ||
-      (config.accounts &&
-        Object.values(config.accounts).some((a) => a?.messageType === "card"));
-    return {
-      actions: ["send"] as const,
-      capabilities: hasCardMode ? (["cards"] as const) : [],
-      schema: null,
-    };
-  },
+  describeMessageTool: ({ cfg }) => describeDingTalkMessageTool(cfg),
+  listActions: ({ cfg }) => [...describeDingTalkMessageTool(cfg).actions],
+  supportsCards: ({ cfg }) => describeDingTalkMessageTool(cfg).capabilities.length > 0,
   supportsAction: ({ action }) => action === "send",
   extractToolSend: ({ args }) => extractToolSend(args, "sendMessage"),
   handleAction: async ({ action, params, cfg, accountId, dryRun }) => {

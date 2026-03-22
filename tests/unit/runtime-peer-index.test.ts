@@ -66,6 +66,7 @@ const shared = vi.hoisted(() => ({
 
 vi.mock("openclaw/plugin-sdk/core", () => ({
     defineChannelPluginEntry: shared.defineChannelPluginEntryMock,
+    emptyPluginConfigSchema: vi.fn(() => ({ schema: {} })),
 }));
 
 vi.mock("openclaw/plugin-sdk/matrix", () => ({

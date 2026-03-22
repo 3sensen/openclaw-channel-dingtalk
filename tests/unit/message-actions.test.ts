@@ -69,6 +69,9 @@ import { dingtalkPlugin } from '../../src/channel';
 
 describe('dingtalkPlugin.actions.send', () => {
     const cfg = { channels: { dingtalk: { clientId: 'id', clientSecret: 'sec' } } };
+    const cardCfg = {
+        channels: { dingtalk: { clientId: 'id', clientSecret: 'sec', messageType: 'card' } },
+    };
 
     beforeEach(() => {
         sendMessageMock.mockReset();
@@ -101,6 +104,23 @@ describe('dingtalkPlugin.actions.send', () => {
             expect.objectContaining({ accountId: 'default' })
         );
         expect(sendMessageMock).not.toHaveBeenCalled();
+    });
+
+    it('describes message tool with send action and card capability when card mode is enabled', () => {
+        expect(
+            dingtalkPlugin.actions?.describeMessageTool?.({
+                cfg: cardCfg as any,
+            } as any),
+        ).toEqual({
+            actions: ['send'],
+            capabilities: ['cards'],
+            schema: null,
+        });
+    });
+
+    it('keeps legacy action discovery aligned with describeMessageTool', () => {
+        expect(dingtalkPlugin.actions?.listActions?.({ cfg: cardCfg as any } as any)).toEqual(['send']);
+        expect(dingtalkPlugin.actions?.supportsCards?.({ cfg: cardCfg as any } as any)).toBe(true);
     });
 
     it('rejects asVoice when media input is not an audio file', async () => {
