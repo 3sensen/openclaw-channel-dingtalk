@@ -207,7 +207,22 @@ function readBooleanLikeParam(params: Record<string, unknown>, key: string): boo
 }
 
 const dingtalkMessageActions: ChannelMessageActionAdapter = {
-  listActions: () => ["send"],
+  describeMessageTool: ({ cfg }) => {
+    const config = getConfig(cfg);
+    const configured = Boolean(config.clientId && config.clientSecret);
+    if (!configured && !(config.accounts && Object.keys(config.accounts).length > 0)) {
+      return { actions: [], capabilities: [], schema: null };
+    }
+    const hasCardMode =
+      config.messageType === "card" ||
+      (config.accounts &&
+        Object.values(config.accounts).some((a) => a?.messageType === "card"));
+    return {
+      actions: ["send"] as const,
+      capabilities: hasCardMode ? (["cards"] as const) : [],
+      schema: null,
+    };
+  },
   supportsAction: ({ action }) => action === "send",
   extractToolSend: ({ args }) => pluginSdk.extractToolSend(args, "sendMessage"),
   handleAction: async ({ action, params, cfg, accountId, dryRun }) => {
