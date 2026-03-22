@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { DWClient, TOPIC_CARD, TOPIC_ROBOT } from "dingtalk-stream";
-import type { ChannelMessageActionAdapter, OpenClawConfig } from "openclaw/plugin-sdk";
-import * as pluginSdk from "openclaw/plugin-sdk";
+import type { ChannelMessageActionAdapter } from "openclaw/plugin-sdk/channel-contract";
+import { buildChannelConfigSchema, type OpenClawConfig } from "openclaw/plugin-sdk/core";
+import { jsonResult, readStringParam } from "openclaw/plugin-sdk/telegram-core";
+import { extractToolSend } from "openclaw/plugin-sdk/tool-send";
 import { getAccessToken } from "./auth";
 import { analyzeCardCallback } from "./card-callback-service";
 import {
@@ -30,7 +32,7 @@ import {
 import { handleDingTalkMessage } from "./inbound-handler";
 import { getLogger } from "./logger-context";
 import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
-import { dingtalkOnboardingAdapter } from "./onboarding.js";
+import { dingtalkSetupAdapter, dingtalkSetupWizard } from "./onboarding.js";
 import { resolveOriginalPeerId, preloadPeerIdsFromSessions } from "./peer-id-registry";
 import { getDingTalkRuntime } from "./runtime";
 import {
@@ -224,23 +226,23 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
     };
   },
   supportsAction: ({ action }) => action === "send",
-  extractToolSend: ({ args }) => pluginSdk.extractToolSend(args, "sendMessage"),
+  extractToolSend: ({ args }) => extractToolSend(args, "sendMessage"),
   handleAction: async ({ action, params, cfg, accountId, dryRun }) => {
     if (action !== "send") {
       throw new Error(`Action ${action} is not supported for provider dingtalk.`);
     }
 
-    const to = pluginSdk.readStringParam(params, "to", { required: true });
+    const to = readStringParam(params, "to", { required: true });
     const mediaInput =
-      pluginSdk.readStringParam(params, "media", { trim: false }) ??
-      pluginSdk.readStringParam(params, "path", { trim: false }) ??
-      pluginSdk.readStringParam(params, "filePath", { trim: false }) ??
-      pluginSdk.readStringParam(params, "mediaUrl", { trim: false });
+      readStringParam(params, "media", { trim: false }) ??
+      readStringParam(params, "path", { trim: false }) ??
+      readStringParam(params, "filePath", { trim: false }) ??
+      readStringParam(params, "mediaUrl", { trim: false });
 
     const hasMedia = Boolean(mediaInput && mediaInput.trim());
-    const caption = pluginSdk.readStringParam(params, "caption", { allowEmpty: true }) ?? "";
+    const caption = readStringParam(params, "caption", { allowEmpty: true }) ?? "";
     let message =
-      pluginSdk.readStringParam(params, "message", {
+      readStringParam(params, "message", {
         required: !hasMedia,
         allowEmpty: true,
       }) ?? "";
@@ -250,12 +252,12 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
     }
 
     const asVoice = readBooleanLikeParam(params, "asVoice") === true;
-    const requestedMediaType = pluginSdk.readStringParam(params, "mediaType");
+    const requestedMediaType = readStringParam(params, "mediaType");
 
     const target = resolveOriginalPeerId(stripTargetPrefix(to).targetId);
 
     if (dryRun) {
-      return pluginSdk.jsonResult({
+      return jsonResult({
         ok: true,
         dryRun: true,
         to: target,
@@ -288,7 +290,7 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
           throw new Error(result.error || "send media failed");
         }
 
-        return pluginSdk.jsonResult({
+        return jsonResult({
           ok: true,
           to: target,
           mediaType,
@@ -320,7 +322,7 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
     }
 
     const data = result.data as any;
-    return pluginSdk.jsonResult({
+    return jsonResult({
       ok: true,
       to: target,
       messageId: data?.processQueryKey || data?.messageId || null,
@@ -341,8 +343,9 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
     blurb: "钉钉企业内部机器人，使用 Stream 模式，无需公网 IP。",
     aliases: ["dd", "ding"],
   },
-  configSchema: pluginSdk.buildChannelConfigSchema(DingTalkConfigSchema),
-  onboarding: dingtalkOnboardingAdapter,
+  configSchema: buildChannelConfigSchema(DingTalkConfigSchema),
+  setup: dingtalkSetupAdapter,
+  setupWizard: dingtalkSetupWizard,
   capabilities: {
     chatTypes: ["direct", "group"] as Array<"direct" | "group">,
     reactions: false,

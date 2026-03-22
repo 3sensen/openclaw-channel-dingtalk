@@ -10,13 +10,15 @@
  */
 
 import type {
-  OpenClawConfig,
   OpenClawPluginApi,
-  ChannelLogSink as SDKChannelLogSink,
+  ChannelPlugin as SDKChannelPlugin,
+  OpenClawConfig,
+} from "openclaw/plugin-sdk/core";
+import type {
   ChannelAccountSnapshot as SDKChannelAccountSnapshot,
   ChannelGatewayContext as SDKChannelGatewayContext,
-  ChannelPlugin as SDKChannelPlugin,
-} from "openclaw/plugin-sdk";
+  ChannelLogSink as SDKChannelLogSink,
+} from "openclaw/plugin-sdk/channel-runtime";
 import { mergeAccountWithDefaults } from "./config";
 
 export type AckReactionMode = "off" | "emoji" | "kaomoji";
