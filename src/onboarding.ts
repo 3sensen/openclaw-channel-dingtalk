@@ -108,8 +108,19 @@ async function promptDingTalkAccountId(options: {
     message: `Use existing ${options.label} account?`,
     initialValue: true,
   });
-  if (useExisting && existingIds.includes(options.currentId)) {
-    return options.currentId;
+  if (useExisting) {
+    if (existingIds.includes(options.currentId)) {
+      return options.currentId;
+    }
+    const selected = await options.prompter.select({
+      message: `Select existing ${options.label} account`,
+      options: existingIds.map((accountId) => ({
+        label: accountId,
+        value: accountId,
+      })),
+      initialValue: existingIds[0],
+    });
+    return normalizeAccountId(String(selected));
   }
   const newId = await options.prompter.text({
     message: `New ${options.label} account ID`,

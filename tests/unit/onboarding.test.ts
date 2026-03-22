@@ -34,6 +34,34 @@ describe("dingtalk setup wizard", () => {
         expect(configured).toBe(false);
     });
 
+    it("prompts to select an existing account when default account is missing", async () => {
+        const confirm = vi.fn().mockResolvedValueOnce(true);
+        const select = vi.fn().mockResolvedValueOnce("acct-b");
+        const text = vi.fn();
+
+        const accountId = await dingtalkSetupWizard.resolveAccountIdForConfigure?.({
+            cfg: {
+                channels: {
+                    dingtalk: {
+                        accounts: {
+                            "acct-a": { clientId: "id-a", clientSecret: "sec-a" },
+                            "acct-b": { clientId: "id-b", clientSecret: "sec-b" },
+                        },
+                    },
+                },
+            } as any,
+            prompter: { confirm, select, text } as unknown as WizardPrompter,
+            shouldPromptAccountIds: true,
+            listAccountIds: () => ["acct-a", "acct-b"],
+            defaultAccountId: "default",
+        });
+
+        expect(accountId).toBe("acct-b");
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(select).toHaveBeenCalledTimes(1);
+        expect(text).not.toHaveBeenCalled();
+    });
+
     it("configure writes card + allowlist settings", async () => {
         const note = vi.fn();
         const text = vi
