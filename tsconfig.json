@@ -34,7 +34,6 @@
         "../../dist/plugin-sdk/index.d.ts",
         "../openclaw/dist/plugin-sdk/plugin-sdk/index.d.ts",
         "../openclaw/dist/plugin-sdk/index.d.ts",
-        "./node_modules/openclaw/dist/plugin-sdk/index.d.ts",
         "../../src/plugin-sdk/index.ts",
         "../openclaw/src/plugin-sdk/index.ts"
       ],
@@ -43,7 +42,6 @@
         "../../dist/plugin-sdk/*.d.ts",
         "../openclaw/dist/plugin-sdk/plugin-sdk/*.d.ts",
         "../openclaw/dist/plugin-sdk/*.d.ts",
-        "./node_modules/openclaw/dist/plugin-sdk/*.d.ts",
         "../../src/plugin-sdk/*.ts",
         "../openclaw/src/plugin-sdk/*.ts"
       ]

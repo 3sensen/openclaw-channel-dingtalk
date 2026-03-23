@@ -1,13 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { DWClient, TOPIC_CARD, TOPIC_ROBOT } from "dingtalk-stream";
-import {
-  buildChannelConfigSchema,
-  extractToolSend,
-  jsonResult,
-  readStringParam,
-  type ChannelMessageActionAdapter,
-  type OpenClawConfig,
-} from "./sdk-compat";
+import type { ChannelMessageActionAdapter } from "openclaw/plugin-sdk/channel-contract";
+import { buildChannelConfigSchema, type OpenClawConfig } from "openclaw/plugin-sdk/core";
+import { jsonResult, readStringParam } from "openclaw/plugin-sdk/telegram-core";
+import { extractToolSend } from "openclaw/plugin-sdk/tool-send";
 import { getAccessToken } from "./auth";
 import { analyzeCardCallback } from "./card-callback-service";
 import {
@@ -234,8 +230,6 @@ function describeDingTalkMessageTool(cfg: OpenClawConfig): {
 
 const dingtalkMessageActions: ChannelMessageActionAdapter = {
   describeMessageTool: ({ cfg }) => describeDingTalkMessageTool(cfg),
-  listActions: ({ cfg }) => [...describeDingTalkMessageTool(cfg).actions],
-  supportsCards: ({ cfg }) => describeDingTalkMessageTool(cfg).capabilities.length > 0,
   supportsAction: ({ action }) => action === "send",
   extractToolSend: ({ args }) => extractToolSend(args, "sendMessage"),
   handleAction: async ({ action, params, cfg, accountId, dryRun }) => {

@@ -69,16 +69,28 @@ vi.mock("openclaw/plugin-sdk/core", () => ({
     emptyPluginConfigSchema: vi.fn(() => ({ schema: {} })),
 }));
 
-vi.mock("openclaw/plugin-sdk/matrix", () => ({
+vi.mock("openclaw/plugin-sdk/telegram-core", () => ({
     readStringParam: shared.readStringParamMock,
-    DEFAULT_ACCOUNT_ID: "default",
-    normalizeAccountId: (value: string) => value.trim() || "default",
-    formatDocsLink: (path: string) => `https://docs.example${path}`,
-    buildChannelConfigSchema: vi.fn((schema: unknown) => schema),
-    jsonResult: vi.fn((payload: unknown) => payload),
 }));
 
-vi.mock("openclaw/plugin-sdk/googlechat", () => ({
+vi.mock("openclaw/plugin-sdk/runtime-store", () => ({
+    createPluginRuntimeStore: vi.fn((errorMessage: string) => {
+        let runtime: unknown;
+        return {
+            setRuntime(next: unknown) {
+                runtime = next;
+            },
+            getRuntime() {
+                if (!runtime) {
+                    throw new Error(errorMessage);
+                }
+                return runtime;
+            },
+        };
+    }),
+}));
+
+vi.mock("openclaw/plugin-sdk/tool-send", () => ({
     extractToolSend: vi.fn((args: Record<string, unknown>) => {
         const to = typeof args.to === "string" ? args.to.trim() : "";
         return to ? { to } : null;

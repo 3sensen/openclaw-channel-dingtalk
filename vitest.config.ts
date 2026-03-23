@@ -1,27 +1,6 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
-const localPluginSdkRoot = resolve(__dirname, "../openclaw/src/plugin-sdk");
-const useLocalPluginSdk = existsSync(localPluginSdkRoot);
-
 export default defineConfig({
-    ...(useLocalPluginSdk
-        ? {
-              resolve: {
-                  alias: [
-                      {
-                          find: /^openclaw\/plugin-sdk$/,
-                          replacement: resolve(__dirname, "../openclaw/src/plugin-sdk/index.ts"),
-                      },
-                      {
-                          find: /^openclaw\/plugin-sdk\/(.+)$/,
-                          replacement: resolve(__dirname, "../openclaw/src/plugin-sdk/$1.ts"),
-                      },
-                  ],
-              },
-          }
-        : {}),
     test: {
         environment: "node",
         include: ["tests/**/*.test.ts"],

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig, WizardPrompter } from "../../src/sdk-compat";
+import type { OpenClawConfig, WizardPrompter } from "openclaw/plugin-sdk/setup";
 
-vi.mock("openclaw/plugin-sdk/matrix", () => ({
+vi.mock("openclaw/plugin-sdk/setup", () => ({
     DEFAULT_ACCOUNT_ID: "default",
     normalizeAccountId: (value: string) => value.trim() || "default",
     formatDocsLink: (path: string) => `https://docs.example${path}`,
