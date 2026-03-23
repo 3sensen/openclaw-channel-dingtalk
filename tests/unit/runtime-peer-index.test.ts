@@ -69,7 +69,7 @@ vi.mock("openclaw/plugin-sdk/core", () => ({
     emptyPluginConfigSchema: vi.fn(() => ({ schema: {} })),
 }));
 
-vi.mock("openclaw/plugin-sdk/telegram-core", () => ({
+vi.mock("openclaw/plugin-sdk/param-readers", () => ({
     readStringParam: shared.readStringParamMock,
 }));
 
@@ -215,6 +215,7 @@ describe("runtime + peer registry + index plugin", () => {
             respond: respondCreate,
             params: { spaceId: "space_1", title: "测试文档", content: "第一段" },
         });
+        expect(shared.readStringParamMock).toHaveBeenCalled();
         expect(respondCreate).toHaveBeenCalledWith(true, { docId: "doc_1", title: "测试文档", docType: "alidoc" });
 
         const respondSearch = vi.fn();
