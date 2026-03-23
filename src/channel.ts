@@ -232,7 +232,7 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
   describeMessageTool: ({ cfg }) => describeDingTalkMessageTool(cfg),
   supportsAction: ({ action }) => action === "send",
   extractToolSend: ({ args }) => extractToolSend(args, "sendMessage"),
-  handleAction: async ({ action, params, cfg, accountId, dryRun }) => {
+  handleAction: async ({ action, params, cfg, accountId, dryRun, mediaLocalRoots }) => {
     if (action !== "send") {
       throw new Error(`Action ${action} is not supported for provider dingtalk.`);
     }
@@ -289,6 +289,7 @@ const dingtalkMessageActions: ChannelMessageActionAdapter = {
         const result = await sendProactiveMedia(config, target, mediaPath, mediaType, {
           log,
           accountId: accountId ?? undefined,
+          mediaLocalRoots,
         });
 
         if (!result.ok) {
@@ -344,7 +345,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
     id: "dingtalk",
     label: "DingTalk",
     selectionLabel: "DingTalk (钉钉)",
-    docsPath: "/channels/dingtalk",
+    docsPath: "https://github.com/soimy/openclaw-channel-dingtalk",
     blurb: "钉钉企业内部机器人，使用 Stream 模式，无需公网 IP。",
     aliases: ["dd", "ding"],
   },
@@ -502,6 +503,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
       mediaType: providedMediaType,
       asVoice,
       accountId,
+      mediaLocalRoots,
       log,
     }: any) => {
       const config = getConfig(cfg, accountId);
@@ -570,6 +572,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
             accountId,
             storePath,
             conversationId: to,
+            mediaLocalRoots,
           });
         } catch (err: any) {
           if (err?.response?.data !== undefined) {

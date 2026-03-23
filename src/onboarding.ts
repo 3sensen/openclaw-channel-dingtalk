@@ -90,7 +90,7 @@ async function noteDingTalkHelp(prompter: WizardPrompter): Promise<void> {
       "3. Enable 'Robot' capability",
       "4. Configure message receiving mode as 'Stream mode'",
       "5. Copy Client ID (AppKey) and Client Secret (AppSecret)",
-      `Docs: ${formatDocsLink("/channels/dingtalk", "channels/dingtalk")}`,
+      `Docs: ${formatDocsLink("https://github.com/soimy/openclaw-channel-dingtalk", "plugin docs")}`,
     ].join("\n"),
     "DingTalk setup",
   );

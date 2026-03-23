@@ -18,7 +18,7 @@
 - [#289 dingtalk connection error 503 & 400](https://github.com/soimy/openclaw-channel-dingtalk/issues/289)（状态：已关闭）
 - [#345 机器人时不时收不到回复，只能重新发送，几次才能好](https://github.com/soimy/openclaw-channel-dingtalk/issues/345)（状态：已关闭）
 - [#373 长时间不用钉钉机器人，再发送消息，openclaw接收不到](https://github.com/soimy/openclaw-channel-dingtalk/issues/373)（状态：开启）
-- [#390 Delayed callback ack causes DingTalk to redeliver messages, resulting in duplicate processing](https://github.com/soimy/openclaw-channel-dingtalk/issues/390)（状态：开启）
+- [#390 Delayed callback ack causes DingTalk to redeliver messages, resulting in duplicate processing](https://github.com/soimy/openclaw-channel-dingtalk/issues/390)（状态：已关闭（关联 PR #392））
 
 任务：
 - [ ] 复核现有稳定性问题是否仍可复现
@@ -41,8 +41,8 @@
 - [ ] 合并核对 `#345` 新反馈（markdown 模式也出现间歇性丢回复），确认是否与连接层问题同源
 - [ ] 汇总 `#104` 最新反馈中“群聊需 @ 才稳定触发”的现象，区分上游丢消息与群聊触发条件导致的假阳性
 - [ ] 跟进 `#373` 的版本升级回归（3.2 -> 3.3）与日志采样，确认是否与 `#104/#345` 同源
-- [ ] 跟进 `#390` 的 callback ack 时序修复方案，补齐 `no-dedupKey` 与 in-flight 分支 ACK 行为一致性回归
-  - [ ] [#392 fix: acknowledge DingTalk callback immediately to prevent redelivery](https://github.com/soimy/openclaw-channel-dingtalk/pull/392)（状态：要求修改）
+- [x] 跟进 `#390` 的 callback ack 时序修复方案，补齐 `no-dedupKey` 与 in-flight 分支 ACK 行为一致性回归
+  - [x] [#392 fix: acknowledge DingTalk callback immediately to prevent redelivery](https://github.com/soimy/openclaw-channel-dingtalk/pull/392)（状态：合并）
 
 ### 2. AI Card 发送链路一致性
 相关 Issues：
@@ -91,6 +91,8 @@
   - [x] [#300 feat(dingtalk): 优化 Markdown 表格发送兼容性](https://github.com/soimy/openclaw-channel-dingtalk/pull/300)（状态：合并）
   - [x] [#335 feat: add convertMarkdownTables config option](https://github.com/soimy/openclaw-channel-dingtalk/pull/335)（状态：合并）
 - [ ] 基于 `#198/#292` 复核“工具流发送失败不应中断后续正文回复”的错误分级与降级路径
+- [ ] 跟进 `#396` 内置卡片模板与停止按钮方案，复核其与 `message-context-store` 主路径的一致性后再决定合入
+  - [ ] [#396 feat(card): built-in AI card template with stop button support](https://github.com/soimy/openclaw-channel-dingtalk/pull/396)（状态：通过）
 - [x] 跟进 AI Card finalize 收尾修复并回归“多轮 tool + final chunk + 首行重复”组合场景（#348/#350/#352）
   - [x] [#348 fix(card): use accumulated content for AI Card finalization](https://github.com/soimy/openclaw-channel-dingtalk/pull/348)（状态：合并）
   - [x] [#350 fix(card): fix AI Card streaming finalization bugs](https://github.com/soimy/openclaw-channel-dingtalk/pull/350)（状态：合并）
@@ -115,6 +117,7 @@
 - [#366 无法发送本机文件到我的钉钉问题](https://github.com/soimy/openclaw-channel-dingtalk/issues/366)（状态：开启）
 - [#270 钉钉收不到文件，回复只收到占位符，图片、语音都没有问题](https://github.com/soimy/openclaw-channel-dingtalk/issues/270)（状态：开启）
 - [#391 能否做到帮我从钉盘找图片/文件并发给我](https://github.com/soimy/openclaw-channel-dingtalk/issues/391)（状态：开启）
+- [#397 [Bug] Sandbox mode: sendMedia fails for workspace files - not using loadWebMedia](https://github.com/soimy/openclaw-channel-dingtalk/issues/397)（状态：开启）
 
 任务：
 - [ ] 核对基础文件发送能力的当前边界
@@ -129,6 +132,7 @@
 - [ ] 将 `#366` 的“文本正常但文件发送失败”场景补充到文件链路最小复现矩阵，并对齐与 `#207/#315` 的同源性判断
 - [ ] 合并 `#270` 的“仅文件占位符”现场日志，补齐“下载成功但提取失败”与“未落盘”两类分流排障步骤
 - [ ] 跟进 `#391` 的钉盘自然语言检索诉求，明确“仅引用直发/文件名模糊搜索/全量语义搜索”分级能力与前置权限
+- [ ] 跟进 `#397` 的 sandbox 路径兼容缺口，评估 `sendMedia -> uploadMedia` 是否应统一走 `loadWebMedia` 桥接能力
 
 ### 4. 图片 / 语音 / 媒体链路补强
 相关 Issues：
@@ -158,6 +162,7 @@
 - [ ] 明确 `#351` 的能力边界说明（客户端压缩 / API 不支持原图参数），在文档中补“可控项与不可控项”说明
 - [ ] 跟进 `#365` 的图片占位符问题，修复 `sampleImageMsg` 参数与上传 `mediaId` 语义不匹配
 - [ ] 将 `#394` 纳入图片入站回归矩阵，补充“仅识别为 [图片] 占位符”场景的格式/大小/日志采样
+- [ ] 合并 `#394` 最新评论，补充“模型是否支持多模态”的前置检查与提示路径
 
 ---
 
@@ -263,6 +268,8 @@
   - [ ] [#380 feat(dingtalk): add HTTP callback mode for multi-instance deployment](https://github.com/soimy/openclaw-channel-dingtalk/pull/380)（状态：要求修改）
 - [ ] 跟进 `#383` 入站命令分发抽离重构，确认 command 域边界与现有 owner/session 命令回归覆盖
   - [ ] [#383 refactor(dingtalk): 抽离入站命令分发逻辑](https://github.com/soimy/openclaw-channel-dingtalk/pull/383)（状态：审核中）
+- [ ] 跟进 `#395` plugin-sdk API 对齐分支的冲突收敛与兼容层回归（入口/类型导出/onboarding）
+  - [ ] [#395 refactor(dingtalk): Sync upstream plugin-sdk new API](https://github.com/soimy/openclaw-channel-dingtalk/pull/395)（状态：审核中（草稿，冲突））
 
 ### 9. 支持群聊 @人 / @all
 相关 Issues：
@@ -331,7 +338,7 @@
 - [ ] 复盘 `#367` 关闭未合并方案与当前主线差异（模板变量契约、callback 入口边界、synthetic message 生命周期）
   - [ ] [#367 feat: forward card action callbacks to AI with card variable update](https://github.com/soimy/openclaw-channel-dingtalk/pull/367)（状态：已关闭未合并）
 - [ ] 跟进 `#383` 入站命令分发重构的阻塞项（CI 失败 + ack reaction 重复/额外时延），确认不引入普通消息路径回归
-  - [ ] [#383 refactor(dingtalk): 抽离入站命令分发逻辑](https://github.com/soimy/openclaw-channel-dingtalk/pull/383)（状态：要求修改）
+  - [ ] [#383 refactor(dingtalk): 抽离入站命令分发逻辑](https://github.com/soimy/openclaw-channel-dingtalk/pull/383)（状态：审核中）
 - [x] 跟进 AI Card dynamic summary 默认行为，确认配置与展示不引入额外噪声
   - [x] [#384 feat: enable dynamic summary for AI cards](https://github.com/soimy/openclaw-channel-dingtalk/pull/384)（状态：合并）
 - [ ] 复核 `#374` 的“无思考中反馈”现场是否已被 `#362` 完全覆盖（含用户配置位置错误场景）
@@ -399,6 +406,7 @@
 - [ ] 对齐 `historyLimit` 默认值语义（代码默认关闭 vs 注释默认 50）并补充文档
 - [ ] 在 rebase 后复核 `/summary` 命令边界（owner 鉴权、token 成本、历史窗口与归档段限制）
 - [ ] 跟进 `#331` 最新阻塞项：`conversationId` 归一化冲突导致历史聚合错路由，需统一 canonical key 策略
+- [ ] 结合 `#331` 2026-03-22 最新更新复核“DM scope 统一 / 引用+附件 fallback / target-directory 测试矩阵”是否已消除阻塞项
 
 ---
 
