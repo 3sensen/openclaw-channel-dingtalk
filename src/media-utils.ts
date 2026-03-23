@@ -198,7 +198,7 @@ export async function getMp3DurationSeconds(filePathOrBuffer: string | Buffer, l
       return Math.floor(duration);
     }
 
-    log?.warn?.(`[DingTalk] Could not parse MP3 duration from ${filePathOrBuffer} (found ${frameCount} frames)`);
+    log?.warn?.(`[DingTalk] Could not parse MP3 duration from ${typeof filePathOrBuffer === "string" ? filePathOrBuffer : "<buffer>"} (found ${frameCount} frames)`);
     return 0;
   } catch (err: unknown) {
     log?.error?.(`[DingTalk] Failed to get MP3 duration: ${err instanceof Error ? err.message : String(err)}`);
