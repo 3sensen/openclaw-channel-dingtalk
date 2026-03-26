@@ -65,7 +65,12 @@ function sanitizeAgentName(name: string): string {
 }
 
 /**
- * Resolve @mention-based sub-agent routing for a group message.
+ * Resolve @mention-based sub-agent routing for a group or direct message.
+ *
+ * In group chats, @mentions are populated by the DingTalk SDK (atMentions field).
+ * In direct messages (DM), the SDK also populates atMentions for text-type messages
+ * via extractMessageContent in message-utils.ts, so the same field is reused here.
+ * The !isGroup guard is removed to enable sub-agent routing in DM as well.
  *
  * Returns matched agents if any @mentions resolve to configured agents,
  * or null if the message should be handled by the default agent.
@@ -85,14 +90,14 @@ export async function resolveSubAgentRoute(params: {
   const { extractedContent, cfg, isGroup, dingtalkConfig, sessionWebhook, senderId, log } = params;
 
   const atMentions = extractedContent.atMentions || [];
-  const atUserDingtalkIds = extractedContent.atUserDingtalkIds;
+  // DM has no @picker list from DingTalk; only group chats provide atUsers for real-user hints.
+  const atUserDingtalkIds = isGroup ? extractedContent.atUserDingtalkIds : undefined;
   // Strip quoted prefix before checking /learn to avoid false positives
   // when the quoted message itself contains a /learn command.
   const textForCommandCheck = extractedContent.text.replace(/^\[引用[^\]]*\]\s*/, "");
   const isLearnCommand = parseLearnCommand(textForCommandCheck).scope !== "unknown";
 
   if (
-    !isGroup ||
     atMentions.length === 0 ||
     !cfg.agents?.list ||
     cfg.agents.list.length === 0 ||
@@ -114,9 +119,9 @@ export async function resolveSubAgentRoute(params: {
   if (hasInvalidAgentNames) {
     const fallbackReason = `未找到名为"${unmatchedNames.join("、")}"的助手`;
     try {
+      const sendOptions = isGroup ? { atUserId: senderId, log } : { log };
       await sendBySession(dingtalkConfig, sessionWebhook, `⚠️ ${fallbackReason}`, {
-        atUserId: senderId,
-        log,
+        ...sendOptions,
       });
     } catch (err: any) {
       log?.debug?.(`[DingTalk] Failed to send fallback notice: ${err.message}`);
