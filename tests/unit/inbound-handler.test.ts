@@ -2512,7 +2512,7 @@ describe("inbound-handler", () => {
     );
   });
 
-  it("handleDingTalkMessage stores extracted attachment text without injecting it into the current inbound context", async () => {
+  it("handleDingTalkMessage stores extracted attachment text and injects it into inbound body", async () => {
     const runtime = buildRuntime();
     shared.getRuntimeMock.mockReturnValueOnce(runtime);
     shared.extractMessageContentMock.mockReturnValueOnce({
@@ -2562,8 +2562,8 @@ describe("inbound-handler", () => {
     });
     expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        RawBody: "[钉钉文档]\n\n",
-        CommandBody: "[钉钉文档]\n\n",
+        RawBody: "[钉钉文档]\n\n[附件内容摘录]\n第一段\n第二段",
+        CommandBody: "[钉钉文档]\n\n[附件内容摘录]\n第一段\n第二段",
       }),
     );
     const restored = messageContextStore.resolveByMsgId({
@@ -7010,5 +7010,207 @@ describe("inbound-handler", () => {
       (call: any[]) => typeof call[2] === "string" && call[2].includes("访问受限"),
     );
     expect(denyCalls.length).toBe(0);
+  });
+
+  it("handleDingTalkMessage concatenates extracted attachment text into inboundText", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "[钉钉文档]\n\n",
+      messageType: "interactiveCardFile",
+      docSpaceId: "space_attach_concat",
+      docFileId: "file_attach_concat",
+    });
+    shared.downloadGroupFileMock.mockResolvedValueOnce({
+      path: "/tmp/.openclaw/media/inbound/report.pdf",
+      mimeType: "application/pdf",
+    });
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "第一章 概述\n本报告介绍了...",
+      sourceType: "pdf",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { dmPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "msg_attach_concat",
+        msgtype: "interactiveCard",
+        content: {
+          fileName: "report.pdf",
+          biz_custom_action_url:
+            "dingtalk://dingtalkclient/page/yunpan?route=previewDentry&spaceId=space_attach_concat&fileId=file_attach_concat&type=file",
+        },
+        conversationType: "1",
+        conversationId: "cid_dm_attach_concat",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    // The extracted text MUST be concatenated into RawBody/CommandBody
+    expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RawBody: expect.stringContaining("[附件内容摘录]"),
+      }),
+    );
+    expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RawBody: expect.stringContaining("第一章 概述\n本报告介绍了..."),
+      }),
+    );
+  });
+
+  it("handleDingTalkMessage downloads quoted file via fileDownloadCode without calling resolveQuotedFile", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.clearMessageContextCacheForTest();
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "看这个文件",
+      messageType: "text",
+      quoted: {
+        isQuotedFile: true,
+        msgId: "file_msg_777",
+        fileCreatedAt: 1774356117207,
+        fileDownloadCode: "DIRECT_DL_CODE",
+        previewFileName: "report.pdf",
+        previewMessageType: "file",
+      },
+    });
+    mockedAxiosPost.mockResolvedValueOnce({
+      data: { downloadUrl: "https://download.dingtalk.com/file" },
+    } as any);
+    mockedAxiosGet.mockResolvedValueOnce({
+      data: Buffer.from("PDF content"),
+      headers: { "content-type": "application/pdf" },
+    } as any);
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "文件内容摘录",
+      sourceType: "text",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { groupPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "m_file_dl_777",
+        msgtype: "text",
+        text: { content: "看这个文件", isReplyMsg: true },
+        conversationType: "2",
+        conversationId: "cid_file_dl",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    expect(shared.resolveQuotedFileMock).not.toHaveBeenCalled();
+    expect(shared.extractAttachmentTextMock).toHaveBeenCalled();
+    expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RawBody: expect.stringContaining("[附件内容摘录]"),
+      }),
+    );
+  });
+
+  it("handleDingTalkMessage skips Step 1 when Step 0 already resolved via fileDownloadCode", async () => {
+    const runtime = buildRuntime();
+    shared.getRuntimeMock.mockReturnValueOnce(runtime);
+    messageContextStore.clearMessageContextCacheForTest();
+
+    // Pre-seed a cached record so quotedRecord is non-null and has a downloadCode.
+    // Without the !fileResolved guard, Step 1 would call downloadMedia with this code.
+    messageContextStore.upsertInboundMessageContext({
+      storePath: "/tmp/store.json",
+      accountId: "main",
+      conversationId: "cid_step1_guard",
+      msgId: "file_msg_step1",
+      createdAt: Date.now(),
+      messageType: "file",
+      media: { downloadCode: "CACHED_DL_CODE" },
+      ttlMs: 24 * 60 * 60 * 1000,
+      topic: null,
+    });
+
+    shared.extractMessageContentMock.mockReturnValueOnce({
+      text: "看这个文件",
+      messageType: "text",
+      quoted: {
+        isQuotedFile: true,
+        msgId: "file_msg_step1",
+        fileCreatedAt: 1774356117207,
+        fileDownloadCode: "DIRECT_DL_CODE",
+        previewFileName: "report.pdf",
+        previewMessageType: "file",
+      },
+    });
+    // Step 0 download (DIRECT_DL_CODE)
+    mockedAxiosPost.mockResolvedValueOnce({
+      data: { downloadUrl: "https://download.dingtalk.com/direct" },
+    } as any);
+    mockedAxiosGet.mockResolvedValueOnce({
+      data: Buffer.from("PDF content"),
+      headers: { "content-type": "application/pdf" },
+    } as any);
+    shared.extractAttachmentTextMock.mockResolvedValueOnce({
+      text: "文件内容摘录",
+      sourceType: "text",
+      truncated: false,
+    });
+
+    await handleDingTalkMessage({
+      cfg: {},
+      accountId: "main",
+      sessionWebhook: "https://session.webhook",
+      log: undefined,
+      dingtalkConfig: { groupPolicy: "open", messageType: "markdown", robotCode: "robot_1" } as any,
+      data: {
+        msgId: "m_file_step1_guard",
+        msgtype: "text",
+        text: {
+          content: "看这个文件",
+          isReplyMsg: true,
+          repliedMsg: {
+            msgId: "file_msg_step1",
+            senderId: "user_other",
+            createdAt: 1774356117207,
+            msgType: "file",
+            content: {},
+          },
+        },
+        conversationType: "2",
+        conversationId: "cid_step1_guard",
+        senderId: "user_1",
+        senderStaffId: "staff_1",
+        chatbotUserId: "bot_1",
+        sessionWebhook: "https://session.webhook",
+        createAt: Date.now(),
+      },
+    } as any);
+
+    // Step 0 resolved, so Step 1 must NOT call downloadMedia with the cached code.
+    expect(mockedAxiosPost).not.toHaveBeenCalledWith(
+      "https://api.dingtalk.com/v1.0/robot/messageFiles/download",
+      expect.objectContaining({ downloadCode: "CACHED_DL_CODE" }),
+      expect.anything(),
+    );
+    expect(runtime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RawBody: expect.stringContaining("[附件内容摘录]"),
+      }),
+    );
   });
 });
