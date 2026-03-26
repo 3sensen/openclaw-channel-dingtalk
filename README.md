@@ -23,6 +23,7 @@
 - [API 消耗说明](#api-消耗说明)
 - [消息类型选择](#消息类型选择)
 - [多 Agent 与多个机器人绑定](#多-agent-与多个机器人绑定)
+- [@多助手路由（实验性）](#多助手路由实验性)
 - [使用示例](#使用示例)
 - [故障排除](#故障排除)
 - [开发指南](#开发指南)
@@ -42,64 +43,6 @@
 - ✅ **Markdown 表格兼容** — 自动把 Markdown 表格转换为钉钉更稳定的可读文本
 - ✅ **互动卡片** — 支持流式更新，适用于 AI 实时输出
 - ✅ **完整 AI 对话** — 接入 Clawdbot 消息处理管道
-- ✅ **@多助手路由** — 在群聊中通过 `@助手名` 路由到不同的 agent（实验性功能）
-
-### @多助手路由（实验性）
-
-> ⚠️ **实验性功能**：此功能使用框架层 `agents.list` 配置实现，与框架的 `bindings` 机制独立运作。
-
-在群聊中，用户可以通过 `@助手名` 来指定要对话的 agent。每个 agent 拥有独立的 session。
-
-```
-用户: @frontend 帮我看看这个组件的问题
-[frontend] 好的，请贴出代码...
-
-用户: @dba 数据库慢查询怎么处理？
-[dba] 从数据库角度分析...
-```
-
-#### 配置方式
-
-在 OpenClaw 配置文件中配置 `agents.list`：
-
-```json
-{
-  "agents": {
-    "list": [
-      { "id": "main", "name": "助手", "default": true },
-      { "id": "frontend", "name": "前端专家" },
-      { "id": "dba", "name": "DBA" }
-    ]
-  }
-}
-```
-
-#### 当前功能范围
-
-- @mention 解析 → agent 名匹配（支持 `name` 和 `id`）
-- 路由到独立 agent session
-- 回复自动添加 `[助手名]` 前缀
-
-#### 后续迭代计划
-
-- 群聊历史上下文注入（被 @ 的 agent 能看到近期对话）
-- 多专家协作讨论（专家间链式 @mention、讨论记录共享）
-- `/agents` 命令列出可用专家
-
-#### 已知限制
-
-- sub-agent 路由使用框架的 `buildAgentSessionKey` API，不通过 `bindings` 配置匹配
-- 与框架顶层的 `bindings` 配置**独立运作**，同时配置两者可能导致混淆
-
-### 进程级（memory-only）运行态说明
-
-以下命名空间/状态刻意保持为**仅进程内内存态**，不会进行磁盘持久化：
-
-- `dedup.processed-message`（消息去重窗口）
-- `session.lock`（同 session 串行锁）
-- `channel.inflight`（gateway in-flight 防重锁）
-
-这样设计是为了保证并发控制语义简单且可预期，避免跨进程/重启后引入锁状态不一致问题。
 
 ## 安装
 
@@ -186,6 +129,7 @@ registry=https://registry.npmmirror.com
 ```
 
 > 说明：
+>
 > - 临时环境变量方式仅对当前命令生效，不会污染全局配置。
 > - 若 OpenClaw 运行在 systemd / Docker 等服务环境，请在对应服务环境变量中配置 `NPM_CONFIG_REGISTRY`。
 > - 相关背景可参考 issue [#216](https://github.com/soimy/openclaw-channel-dingtalk/issues/216)。
@@ -716,6 +660,7 @@ node scripts/feedback-learning-debug.mjs --storePath /path/to/session-store.json
 ```
 
 这样之后：
+
 - 用户 A 私聊机器人
 - 群 `cid_group_project_x`
 
@@ -1184,7 +1129,9 @@ node scripts/feedback-learning-debug.mjs --storePath /path/to/session-store.json
 ```
 
 ### 最佳实践
+
 - 为每个 agent 配置不同的 `workspace`，不要让两个 agent 共用同一个 `workspace`
+
 > **说明：**
 > 多 Agent 场景下，`workspace` 不只是“放文件的目录”，还会承载会话相关文件、生成结果以及本地运行状态。
 > 如果两个 agent 共用同一个 `workspace`，实际运行时很容易出现状态串扰、文件覆盖、上下文混用等问题。
@@ -1199,6 +1146,53 @@ node scripts/feedback-learning-debug.mjs --storePath /path/to/session-store.json
 - 修改配置后已执行 `openclaw gateway restart`
 
 如果账号名写错，例如 `bindings.match.accountId = "bot2"`，但 `channels.dingtalk.accounts` 中实际写的是 `bot_2`，则该机器人消息不会按预期路由到目标 agent。
+
+## @多助手路由（实验性）
+
+> ⚠️ **实验性功能**：此功能使用框架层 `agents.list` 配置实现，与框架的 `bindings` 机制独立运作。
+
+在群聊中，用户可以通过 `@助手名` 来指定要对话的 agent。每个 agent 拥有独立的 session。
+
+```
+用户: @frontend 帮我看看这个组件的问题
+[frontend] 好的，请贴出代码...
+
+用户: @dba 数据库慢查询怎么处理？
+[dba] 从数据库角度分析...
+```
+
+### 配置方式
+
+在 OpenClaw 配置文件中配置 `agents.list`：
+
+```json
+{
+  "agents": {
+    "list": [
+      { "id": "main", "name": "助手", "default": true },
+      { "id": "frontend", "name": "前端专家" },
+      { "id": "dba", "name": "DBA" }
+    ]
+  }
+}
+```
+
+### 当前功能范围
+
+- @mention 解析 → agent 名匹配（支持 `name` 和 `id`）
+- 路由到独立 agent session
+- 回复自动添加 `[助手名]` 前缀
+
+### 后续迭代计划
+
+- 群聊历史上下文注入（被 @ 的 agent 能看到近期对话）
+- 多专家协作讨论（专家间链式 @mention、讨论记录共享）
+- `/agents` 命令列出可用专家
+
+### 已知限制
+
+- sub-agent 路由使用框架的 `buildAgentSessionKey` API，不通过 `bindings` 配置匹配
+- 与框架顶层的 `bindings` 配置**独立运作**，同时配置两者可能导致混淆
 
 ## 使用示例
 
@@ -1285,12 +1279,14 @@ await dingtalkPlugin.outbound.sendMedia({
   - 旧版 Windows 可使用：`powershell.exe -File scripts/dingtalk-connection-check.ps1 -Config $env:USERPROFILE\.openclaw\openclaw.json`
 
 完整排障流程：
+
 - 英文版：[docs/connection-troubleshooting.md](docs/connection-troubleshooting.md)
 - 中文版：[docs/connection-troubleshooting.zh-CN.md](docs/connection-troubleshooting.zh-CN.md)
 
 如果新日志里出现 `connect.open` 或 `connect.websocket`，也可以直接按文档中的阶段说明来判断：前者优先查钉钉应用配置，后者优先查 WSS / 代理 / 企业网关。
 
 关键设置清单（钉钉后台）
+
 - 应用为企业内部应用/机器人，且已“发布”版本（不是草稿）
 - 版本管理 → 已发布 → 版本详情：可见范围需为“全员员工”
 - 已开启“机器人能力”，消息接收方式为“Stream 模式”
@@ -1331,7 +1327,7 @@ cd openclaw-channel-dingtalk
 npm install
 ```
 
-2. 验证开发环境
+1. 验证开发环境
 
 ```bash
 npm run type-check              # TypeScript 类型检查
