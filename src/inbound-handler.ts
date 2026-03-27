@@ -7,7 +7,7 @@ import { createDynamicAckReactionController } from "./ack-reaction/dynamic-ack-r
 import { extractAttachmentText } from "./attachment-text-extractor";
 import { getAccessToken } from "./auth";
 import { createAICard } from "./card-service";
-import { resolveAckReactionSetting, resolveGroupConfig } from "./config";
+import { resolveAckReactionSetting, resolveGroupConfig, resolveRobotCode } from "./config";
 import {
   applyManualTargetLearningRule,
   applyManualTargetsLearningRule,
@@ -18,7 +18,7 @@ import {
   createOrUpdateTargetSet,
   deleteManualRule,
   disableManualRule,
-  isFeedbackLearningEnabled,
+  isLearningEnabled,
   listLearningTargetSets,
   listScopedLearningRules,
   resolveManualForcedReply,
@@ -272,9 +272,10 @@ export async function downloadMedia(
     log?.error?.("[DingTalk] downloadMedia requires downloadCode to be provided.");
     return null;
   }
-  if (!config.robotCode) {
+  const robotCode = resolveRobotCode(config);
+  if (!robotCode) {
     if (log?.error) {
-      log.error("[DingTalk] downloadMedia requires robotCode to be configured.");
+      log.error("[DingTalk] downloadMedia requires clientId or robotCode to be configured.");
     }
     return null;
   }
@@ -282,7 +283,7 @@ export async function downloadMedia(
     const token = await getAccessToken(config, log);
     const response = await axios.post(
       "https://api.dingtalk.com/v1.0/robot/messageFiles/download",
-      { downloadCode, robotCode: config.robotCode },
+      { downloadCode, robotCode },
       { headers: { "x-acs-dingtalk-access-token": token } },
     );
     const payload = response.data as Record<string, any>;
@@ -1099,6 +1100,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     log?.warn?.(`[DingTalk] Message context inbound append failed: ${String(err)}`);
   }
 
+  const robotCode = resolveRobotCode(dingtalkConfig);
   let mediaPath: string | undefined;
   let mediaType: string | undefined;
   let attachmentContextMsgId = data.msgId;
@@ -1110,7 +1112,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   if (preDownloadedMedia?.mediaPath) {
     mediaPath = preDownloadedMedia.mediaPath;
     mediaType = preDownloadedMedia.mediaType;
-  } else if (content.mediaPath && dingtalkConfig.robotCode) {
+  } else if (content.mediaPath && robotCode) {
     // Download media only if not pre-downloaded
     const media = await downloadMedia(dingtalkConfig, content.mediaPath, log);
     if (media) {
@@ -1254,7 +1256,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   };
 
   // Quoted picture: download via existing downloadMedia.
-  if (!mediaPath && content.quoted?.mediaDownloadCode && dingtalkConfig.robotCode) {
+  if (!mediaPath && content.quoted?.mediaDownloadCode && robotCode) {
     const media =
       (await tryDownloadFromRecord(quotedRecord)) ||
       (await downloadMedia(dingtalkConfig, content.quoted.mediaDownloadCode, log));
@@ -1281,7 +1283,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     let fileResolved = false;
 
     // Step 0: Direct download via downloadCode from quoted payload (file/audio/video msgType).
-    if (!fileResolved && content.quoted.fileDownloadCode && dingtalkConfig.robotCode) {
+    if (!fileResolved && content.quoted.fileDownloadCode && robotCode) {
       const media = await downloadMedia(dingtalkConfig, content.quoted.fileDownloadCode, log);
       if (media) {
         mediaPath = media.path;
@@ -1475,7 +1477,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   const inboundText = attachmentExtractedText
     ? `${inboundBody.trimEnd()}\n\n${attachmentExtractedText}`
     : inboundBody;
-  const learningEnabled = isFeedbackLearningEnabled(dingtalkConfig);
+  const learningEnabled = isLearningEnabled(dingtalkConfig);
   const learningContextBlock = buildLearningContextBlock({
     enabled: learningEnabled,
     storePath: accountStorePath,

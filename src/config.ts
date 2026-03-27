@@ -17,16 +17,15 @@ function normalizeLearningConfig(
   config: DingTalkConfig,
   options: { applyDefaults: boolean },
 ): DingTalkConfig {
-  const learningEnabled = config.learningEnabled ?? config.feedbackLearningEnabled;
-  const learningAutoApply = config.learningAutoApply ?? config.feedbackLearningAutoApply;
-  const learningNoteTtlMs = config.learningNoteTtlMs ?? config.feedbackLearningNoteTtlMs;
   return {
     ...config,
-    learningEnabled: options.applyDefaults ? learningEnabled ?? false : learningEnabled,
-    learningAutoApply: options.applyDefaults ? learningAutoApply ?? false : learningAutoApply,
+    learningEnabled: options.applyDefaults ? config.learningEnabled ?? false : config.learningEnabled,
+    learningAutoApply: options.applyDefaults
+      ? config.learningAutoApply ?? false
+      : config.learningAutoApply,
     learningNoteTtlMs: options.applyDefaults
-      ? learningNoteTtlMs ?? DEFAULT_LEARNING_NOTE_TTL_MS
-      : learningNoteTtlMs,
+      ? config.learningNoteTtlMs ?? DEFAULT_LEARNING_NOTE_TTL_MS
+      : config.learningNoteTtlMs,
   };
 }
 
@@ -141,6 +140,10 @@ export function resolveRelativePath(input: string): string {
 }
 
 export const resolveUserPath = resolveRelativePath;
+
+export function resolveRobotCode(config: Pick<DingTalkConfig, "clientId" | "robotCode">): string {
+  return String(config.robotCode || config.clientId || "").trim();
+}
 
 export function resolveGroupConfig(
   cfg: DingTalkConfig,
