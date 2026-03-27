@@ -21,6 +21,8 @@ export type CardDraftPhase = "idle" | "reasoning" | "answer";
 export interface CardDraftController {
     updateAnswer: (text: string) => void;
     updateReasoning: (text: string) => void;
+    /** Update tool result through draft controller (used in verbose mode for ordered streaming). */
+    updateTool: (text: string) => Promise<void>;
     /** Signal that a new assistant turn has started (e.g. after a tool call). */
     notifyNewAssistantTurn: () => void;
     flush: () => Promise<void>;
@@ -36,6 +38,8 @@ export interface CardDraftController {
 export function createCardDraftController(params: {
     card: AICardInstance;
     throttleMs?: number;
+    /** When true, uses 50ms throttle and allows reasoning updates during answer phase */
+    verboseMode?: boolean;
     log?: Logger;
 }): CardDraftController {
     let phase: CardDraftPhase = "idle";
@@ -46,8 +50,12 @@ export function createCardDraftController(params: {
     let answerPrefix = "";
     let turnBoundaryPending = false;
 
+    // Verbose mode: lower throttle for more real-time updates
+    const verboseThrottleMs = 50;
+    const effectiveThrottleMs = params.verboseMode ? verboseThrottleMs : (params.throttleMs ?? 300);
+
     const loop = createDraftStreamLoop({
-        throttleMs: params.throttleMs ?? 300,
+        throttleMs: effectiveThrottleMs,
         isStopped: () => stopped || failed,
         sendOrEditStreamMessage: async (content: string) => {
             try {
@@ -66,7 +74,8 @@ export function createCardDraftController(params: {
 
     return {
         updateReasoning: (text: string) => {
-            if (stopped || failed || phase === "answer") { return; }
+            // In verbose mode, allow reasoning updates even after answer phase begins
+            if (stopped || failed || (!params.verboseMode && phase === "answer")) { return; }
             phase = "reasoning";
             const formatted = formatContentForCard(text, "thinking");
             if (formatted) {
@@ -87,6 +96,16 @@ export function createCardDraftController(params: {
             const trimmed = text?.trimStart();
             if (trimmed) {
                 loop.update(answerPrefix + trimmed);
+            }
+        },
+
+        updateTool: async (text: string) => {
+            if (stopped || failed) { return; }
+            await loop.flush();
+            await loop.waitForInFlight();
+            const formatted = formatContentForCard(text, "tool");
+            if (formatted) {
+                loop.update(formatted);
             }
         },
 

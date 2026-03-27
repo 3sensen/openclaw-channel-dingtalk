@@ -23,7 +23,11 @@ export function createCardReplyStrategy(
 ): ReplyStrategy {
   const { card, config, log } = ctx;
 
-  const controller = createCardDraftController({ card, log });
+  const controller = createCardDraftController({
+    card,
+    log,
+    verboseMode: config.verboseRealtimeStream,
+  });
   let finalTextForFallback: string | undefined;
 
   return {
@@ -88,25 +92,31 @@ export function createCardReplyStrategy(
           log?.debug?.("[DingTalk] Card failed, skipping tool result (will send full reply on final)");
           return;
         }
-        await controller.flush();
-        await controller.waitForInFlight();
         log?.info?.(
           `[DingTalk] Tool result received, streaming to AI Card: ${(textToSend ?? "").slice(0, 100)}`,
         );
-        const toolText = typeof textToSend === "string" ? formatContentForCard(textToSend, "tool") : "";
-        if (toolText) {
-          const sendResult = await sendMessage(ctx.config, ctx.to, toolText, {
-            sessionWebhook: ctx.sessionWebhook,
-            atUserId: !ctx.isDirect ? ctx.senderId : null,
-            log,
-            card,
-            accountId: ctx.accountId,
-            storePath: ctx.storePath,
-            conversationId: ctx.groupId,
-            cardUpdateMode: "append",
-          });
-          if (!sendResult.ok) {
-            throw new Error(sendResult.error || "Tool stream send failed");
+        // In verbose mode, route tool results through draft controller for ordered throttled streaming
+        if (config.verboseRealtimeStream) {
+          await controller.updateTool(textToSend ?? "");
+        } else {
+          // Original behavior: use sendMessage with cardUpdateMode append
+          await controller.flush();
+          await controller.waitForInFlight();
+          const toolText = typeof textToSend === "string" ? formatContentForCard(textToSend, "tool") : "";
+          if (toolText) {
+            const sendResult = await sendMessage(ctx.config, ctx.to, toolText, {
+              sessionWebhook: ctx.sessionWebhook,
+              atUserId: !ctx.isDirect ? ctx.senderId : null,
+              log,
+              card,
+              accountId: ctx.accountId,
+              storePath: ctx.storePath,
+              conversationId: ctx.groupId,
+              cardUpdateMode: "append",
+            });
+            if (!sendResult.ok) {
+              throw new Error(sendResult.error || "Tool stream send failed");
+            }
           }
         }
         return;
