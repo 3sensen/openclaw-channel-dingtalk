@@ -17,6 +17,8 @@ import type { AICardInstance } from "./types";
 import { AICardStatus } from "./types";
 import { formatDingTalkErrorPayloadLog } from "./utils";
 
+const FILE_ONLY_FALLBACK_ANSWER = "附件已发送，请查收。";
+
 export function createCardReplyStrategy(
   ctx: ReplyStrategyContext & { card: AICardInstance },
 ): ReplyStrategy {
@@ -24,6 +26,15 @@ export function createCardReplyStrategy(
 
   const controller = createCardDraftController({ card, log });
   let finalTextForFallback: string | undefined;
+  let sawFinalDelivery = false;
+
+  const getRenderedTimeline = (options: { preferFinalAnswer?: boolean } = {}): string => {
+    const fallbackAnswer = finalTextForFallback || (sawFinalDelivery ? FILE_ONLY_FALLBACK_ANSWER : undefined);
+    return controller.getRenderedContent({
+      fallbackAnswer,
+      overrideAnswer: options.preferFinalAnswer ? finalTextForFallback : undefined,
+    });
+  };
 
   return {
     getReplyOptions(): ReplyOptions {
@@ -64,6 +75,7 @@ export function createCardReplyStrategy(
 
       // ---- final: defer to finalize, just save text ----
       if (payload.kind === "final") {
+        sawFinalDelivery = true;
         log?.info?.(
           `[DingTalk][Finalize] deliver(final) received — cardState=${card.state} ` +
           `textLen=${typeof textToSend === "string" ? textToSend.length : "null"} ` +
@@ -117,7 +129,7 @@ export function createCardReplyStrategy(
 
       // Card failed -> markdown fallback (bypass sendMessage to avoid duplicate card).
       if (card.state === AICardStatus.FAILED || controller.isFailed()) {
-        const fallbackText = finalTextForFallback
+        const fallbackText = getRenderedTimeline({ preferFinalAnswer: true })
           || controller.getLastAnswerContent()
           || controller.getLastContent()
           || card.lastStreamedContent;
@@ -146,13 +158,11 @@ export function createCardReplyStrategy(
       try {
         await controller.flush();
         await controller.waitForInFlight();
+        const finalText = getRenderedTimeline() || "✅ Done";
         controller.stop();
-        const finalText = controller.getLastAnswerContent()
-          || finalTextForFallback
-          || "✅ Done";
         log?.info?.(
           `[DingTalk][Finalize] Calling finishAICard — finalTextLen=${finalText.length} ` +
-          `source=${controller.getLastAnswerContent() ? "lastAnswerContent" : finalTextForFallback ? "finalTextForFallback" : "fallbackDone"} ` +
+          `source=${controller.getFinalAnswerContent() ? "timeline.answer" : sawFinalDelivery ? "timeline.fileOnly" : "fallbackDone"} ` +
           `preview="${finalText.slice(0, 120)}"`,
         );
         await finishAICard(card, finalText, log, {
@@ -201,7 +211,9 @@ export function createCardReplyStrategy(
     },
 
     getFinalText(): string | undefined {
-      return controller.getLastAnswerContent() || finalTextForFallback;
+      return controller.getFinalAnswerContent()
+        || finalTextForFallback
+        || (sawFinalDelivery ? FILE_ONLY_FALLBACK_ANSWER : undefined);
     },
   };
 }

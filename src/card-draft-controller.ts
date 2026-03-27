@@ -41,7 +41,7 @@ export interface CardDraftController {
     /** Current answer-only content composed from all completed answer turns. */
     getFinalAnswerContent: () => string;
     /** Current rendered timeline, including process blocks and answer text. */
-    getRenderedContent: (options?: { fallbackAnswer?: string }) => string;
+    getRenderedContent: (options?: { fallbackAnswer?: string; overrideAnswer?: string }) => string;
 }
 
 function normalizeProcessText(text: string | undefined): string {
@@ -87,7 +87,7 @@ export function createCardDraftController(params: {
         return [...answerTurns, currentAnswerTurn].filter(Boolean).join("\n\n");
     };
 
-    const renderTimeline = (options: { fallbackAnswer?: string } = {}): string => {
+    const renderTimeline = (options: { fallbackAnswer?: string; overrideAnswer?: string } = {}): string => {
         const parts: string[] = [];
 
         for (const block of processBlocks) {
@@ -101,7 +101,9 @@ export function createCardDraftController(params: {
             parts.push(renderProcessBlock("thinking", liveThinkingText));
         }
 
-        const answer = getFinalAnswerContent() || normalizeAnswerText(options.fallbackAnswer);
+        const answer = normalizeAnswerText(options.overrideAnswer)
+            || getFinalAnswerContent()
+            || normalizeAnswerText(options.fallbackAnswer);
         if (answer) {
             parts.push(answer);
         }
