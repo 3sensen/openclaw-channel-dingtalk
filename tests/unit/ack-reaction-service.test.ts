@@ -70,4 +70,45 @@ describe("ack-reaction-service", () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(settled).toHaveBeenCalledWith(undefined);
   });
+
+  it("resolves attach payload only once when the first attempt succeeds", async () => {
+    shared.axiosPostMock.mockResolvedValueOnce({});
+
+    let clientIdReads = 0;
+    const config = {
+      clientSecret: "secret",
+      get clientId() {
+        clientIdReads += 1;
+        return "robot_1";
+      },
+    };
+
+    const result = await attachNativeAckReaction(config as any, {
+      msgId: "msg_attach_once",
+      conversationId: "cid_attach_once",
+    });
+
+    expect(result).toBe(true);
+    expect(clientIdReads).toBe(1);
+  });
+
+  it("resolves recall payload only once when the first attempt succeeds", async () => {
+    shared.axiosPostMock.mockResolvedValueOnce({});
+
+    let clientIdReads = 0;
+    const config = {
+      clientSecret: "secret",
+      get clientId() {
+        clientIdReads += 1;
+        return "robot_1";
+      },
+    };
+
+    await recallNativeAckReactionWithRetry(config as any, {
+      msgId: "msg_recall_once",
+      conversationId: "cid_recall_once",
+    });
+
+    expect(clientIdReads).toBe(1);
+  });
 });
