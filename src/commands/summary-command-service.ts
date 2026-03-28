@@ -1,7 +1,7 @@
 import {
   type ConversationHistorySlice,
   queryConversationHistory,
-} from "../history/group-history-store";
+} from "./group-history-store";
 import { getDingTalkRuntime } from "../runtime";
 import type { HandleDingTalkMessageParams } from "../types";
 
@@ -354,7 +354,7 @@ export async function generateSummaryNarrative(
     BodyForCommands: prompt.userPrompt,
     From: params.to,
     To: params.to,
-    SessionKey: `${params.routeSessionKey}::summary`,
+    SessionKey: params.routeSessionKey,
     AccountId: params.accountId,
     ChatType: params.chatType,
     ConversationLabel: `${params.conversationLabel} [summary]`,
