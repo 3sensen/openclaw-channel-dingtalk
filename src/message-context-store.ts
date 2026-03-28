@@ -30,6 +30,11 @@ export interface MessageRecord {
   attachmentTextTruncated?: boolean;
   attachmentFileName?: string;
   quotedRef?: QuotedRef;
+  senderId?: string;
+  senderName?: string;
+  mentions?: string[];
+  chatType?: "direct" | "group";
+  quotedMessageId?: string;
   media?: {
     downloadCode?: string;
     spaceId?: string;
@@ -74,6 +79,11 @@ interface BaseUpsertParams {
   attachmentTextTruncated?: boolean;
   attachmentFileName?: string;
   quotedRef?: QuotedRef;
+  senderId?: string;
+  senderName?: string;
+  mentions?: string[];
+  chatType?: "direct" | "group";
+  quotedMessageId?: string;
   media?: {
     downloadCode?: string;
     spaceId?: string;
@@ -214,6 +224,14 @@ function normalizeDelivery(value: unknown): MessageRecord["delivery"] | undefine
   return { messageId, processQueryKey, outTrackId, cardInstanceId, kind };
 }
 
+function normalizeMentions(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = [...new Set(value.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean))];
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function normalizeMessageRecord(value: unknown): MessageRecord | null {
   const candidate = asRecord(value);
   if (!candidate) {
@@ -256,6 +274,14 @@ function normalizeMessageRecord(value: unknown): MessageRecord | null {
     attachmentFileName:
       typeof candidate.attachmentFileName === "string" ? candidate.attachmentFileName : undefined,
     quotedRef: normalizeQuotedRef(candidate.quotedRef),
+    senderId: typeof candidate.senderId === "string" && candidate.senderId.trim() ? candidate.senderId.trim() : undefined,
+    senderName: typeof candidate.senderName === "string" && candidate.senderName.trim() ? candidate.senderName.trim() : undefined,
+    mentions: normalizeMentions(candidate.mentions),
+    chatType: candidate.chatType === "direct" || candidate.chatType === "group" ? candidate.chatType : undefined,
+    quotedMessageId:
+      typeof candidate.quotedMessageId === "string" && candidate.quotedMessageId.trim()
+        ? candidate.quotedMessageId.trim()
+        : undefined,
     media: normalizeMedia(candidate.media),
     delivery: normalizeDelivery(candidate.delivery),
   };
@@ -411,6 +437,20 @@ function mergeQuotedRef(existing: QuotedRef | undefined, next: QuotedRef | undef
   };
 }
 
+function mergeStringField(existing: string | undefined, next: string | undefined): string | undefined {
+  if (typeof next !== "string" || !next.trim()) {
+    return existing;
+  }
+  return next.trim();
+}
+
+function mergeMentions(existing: string[] | undefined, next: string[] | undefined): string[] | undefined {
+  if (!next) {
+    return existing;
+  }
+  return normalizeMentions(next) || existing;
+}
+
 function mergeMedia(
   existing: MessageRecord["media"] | undefined,
   next: MessageRecord["media"] | undefined,
@@ -556,6 +596,11 @@ function upsertRecord(
     attachmentTextTruncated?: boolean;
     attachmentFileName?: string;
     quotedRef?: QuotedRef;
+    senderId?: string;
+    senderName?: string;
+    mentions?: string[];
+    chatType?: "direct" | "group";
+    quotedMessageId?: string;
     media?: MessageRecord["media"];
     delivery?: MessageRecord["delivery"];
     cleanupCreatedAtTtlDays?: number;
@@ -611,6 +656,11 @@ function upsertRecord(
       params.attachmentFileName,
     ),
     quotedRef: mergeQuotedRef(existing?.quotedRef, normalizedQuotedRef),
+    senderId: mergeStringField(existing?.senderId, params.senderId),
+    senderName: mergeStringField(existing?.senderName, params.senderName),
+    mentions: mergeMentions(existing?.mentions, params.mentions),
+    chatType: params.chatType || existing?.chatType,
+    quotedMessageId: mergeStringField(existing?.quotedMessageId, params.quotedMessageId),
     media: mergeMedia(existing?.media, params.media),
     delivery: mergeDelivery(existing?.delivery, params.delivery),
   };
@@ -784,4 +834,14 @@ export function cleanupExpiredMessageContexts(
 
 export function clearMessageContextCacheForTest(): void {
   stateCache.clear();
+}
+
+export function listMessageContexts(
+  params: ScopeParams & { nowMs?: number },
+): MessageRecord[] {
+  const nowMs = params.nowMs ?? Date.now();
+  const state = loadState(params, nowMs);
+  return state.recentByCreatedAt
+    .map((msgId) => state.records[msgId])
+    .filter((record): record is MessageRecord => Boolean(record) && !isRecordExpired(record, nowMs));
 }

@@ -172,6 +172,9 @@ describe('send-service media branches', () => {
                 conversationId: 'user_123',
                 createdAt: expect.any(Number),
                 messageType: 'outbound-proactive-media',
+                senderId: 'bot',
+                senderName: 'OpenClaw',
+                chatType: 'direct',
                 quotedRef: {
                     targetDirection: 'inbound',
                     key: 'msgId',
@@ -214,6 +217,9 @@ describe('send-service media branches', () => {
                 conversationId: 'user_123',
                 text: '媒体发送失败，兜底链接/路径：/tmp/a.pdf',
                 messageType: 'outbound-proactive-fallback',
+                senderId: 'bot',
+                senderName: 'OpenClaw',
+                chatType: 'direct',
                 delivery: expect.objectContaining({
                     processQueryKey: 'fallback_q_1',
                 }),

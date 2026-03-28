@@ -8,7 +8,7 @@ import {
 } from "./card-service";
 import { stripTargetPrefix } from "./config";
 import { getLogger } from "./logger-context";
-import { getVoiceDurationMs, uploadMedia as uploadMediaUtil, type UploadMediaResult } from "./media-utils";
+import { getVoiceDurationMs, uploadMedia as uploadMediaUtil } from "./media-utils";
 import { convertMarkdownTablesToPlainText, detectMarkdownAndExtractTitle } from "./message-utils";
 import { DEFAULT_MESSAGE_CONTEXT_TTL_DAYS, upsertOutboundMessageContext } from "./message-context-store";
 import { resolveOriginalPeerId } from "./peer-id-registry";
@@ -78,6 +78,9 @@ function persistOutboundMessageContext(params: {
   createdAt?: number;
   quotedRef?: QuotedRef;
   log?: Logger;
+  senderId?: string;
+  senderName?: string;
+  chatType?: "direct" | "group";
   delivery: {
     messageId?: string;
     processQueryKey?: string;
@@ -101,6 +104,9 @@ function persistOutboundMessageContext(params: {
     createdAt: params.createdAt ?? Date.now(),
     text: params.text,
     messageType: params.messageType,
+    senderId: params.senderId,
+    senderName: params.senderName,
+    chatType: params.chatType,
     ttlMs: DEFAULT_MESSAGE_CONTEXT_TTL_DAYS * 24 * 60 * 60 * 1000,
     topic: null,
     quotedRef: params.quotedRef,
@@ -116,6 +122,10 @@ function buildPersistedOutboundText(text: string, options: SendMessageOptions): 
     return `[media:${options.mediaType}] ${options.mediaPath}`;
   }
   return text;
+}
+
+function inferConversationChatType(conversationId: string): "direct" | "group" {
+  return conversationId.startsWith("cid") ? "group" : "direct";
 }
 
 function composeCardContentForAppend(previous: string | undefined, incoming: string): string {
@@ -203,16 +213,14 @@ function isProactivePermissionOrScopeError(code: string | null): boolean {
 
 /**
  * Wrapper to upload media with shared getAccessToken binding.
- * Supports sandbox/container paths via mediaLocalRoots option.
  */
 export async function uploadMedia(
   config: DingTalkConfig,
   mediaPath: string,
   mediaType: "image" | "voice" | "video" | "file",
   log?: Logger,
-  options?: { mediaLocalRoots?: string[] },
-): Promise<UploadMediaResult | null> {
-  return uploadMediaUtil(config, mediaPath, mediaType, getAccessToken, log, options);
+): Promise<{ mediaId: string; buffer: Buffer } | null> {
+  return uploadMediaUtil(config, mediaPath, mediaType, getAccessToken, log);
 }
 
 export async function sendProactiveTextOrMarkdown(
@@ -343,19 +351,17 @@ export async function sendProactiveMedia(
   target: string,
   mediaPath: string,
   mediaType: "image" | "voice" | "video" | "file",
-  options: SendMessageOptions & { accountId?: string; mediaLocalRoots?: string[] } = {},
+  options: SendMessageOptions & { accountId?: string } = {},
 ): Promise<{ ok: boolean; error?: string; data?: any; messageId?: string }> {
   const log = options.log || getLogger();
 
   try {
     // Upload first, then send by media_id.
-    const uploadResult = await uploadMedia(config, mediaPath, mediaType, log, {
-      mediaLocalRoots: options.mediaLocalRoots,
-    });
+    const uploadResult = await uploadMedia(config, mediaPath, mediaType, log);
     if (!uploadResult) {
       return { ok: false, error: "Failed to upload media" };
     }
-    const { mediaId, buffer: uploadedBuffer } = uploadResult;
+    const { mediaId, buffer } = uploadResult;
 
     const token = await getAccessToken(config, log);
     const { targetId, isExplicitUser } = stripTargetPrefix(target);
@@ -376,10 +382,7 @@ export async function sendProactiveMedia(
       msgParam = JSON.stringify({ photoURL: mediaId });
     } else if (mediaType === "voice") {
       msgKey = "sampleAudio";
-      // Reuse buffer from upload to avoid reading the file twice
-      const durationMs = await getVoiceDurationMs(mediaPath, mediaType, log, {
-        preReadBuffer: uploadedBuffer,
-      });
+      const durationMs = await getVoiceDurationMs(mediaPath, mediaType, log, { preReadBuffer: buffer });
       msgParam = JSON.stringify({ mediaId, duration: String(durationMs) });
     } else {
       // sampleVideo requires picMediaId; fallback to sampleFile for broader compatibility.
@@ -427,6 +430,9 @@ export async function sendProactiveMedia(
       messageType: "outbound-proactive-media",
       quotedRef: options.quotedRef,
       log,
+      senderId: "bot",
+      senderName: "OpenClaw",
+      chatType: inferConversationChatType(options.conversationId || resolvedTarget),
       delivery: {
         ...delivery,
         kind: "proactive-media",
@@ -485,6 +491,9 @@ export async function sendProactiveMedia(
       messageType: "outbound-proactive-fallback",
       quotedRef: options.quotedRef,
       log,
+      senderId: "bot",
+      senderName: "OpenClaw",
+      chatType: inferConversationChatType(options.conversationId || normalizedTarget),
       delivery: {
         ...fallbackDelivery,
         kind: isTrackingResult(fallback as ProactiveTextSendResult) ? "proactive-card" : "proactive-text",
@@ -505,20 +514,15 @@ export async function sendBySession(
 
   // Session webhook supports native media messages; prefer that when media info is available.
   if (options.mediaPath && options.mediaType) {
-    const uploadResult = await uploadMedia(config, options.mediaPath, options.mediaType, log, {
-      mediaLocalRoots: options.mediaLocalRoots,
-    });
+    const uploadResult = await uploadMedia(config, options.mediaPath, options.mediaType, log);
     if (uploadResult) {
-      const { mediaId, buffer: uploadedBuffer } = uploadResult;
+      const { mediaId, buffer } = uploadResult;
       let body: any;
 
       if (options.mediaType === "image") {
         body = { msgtype: "image", image: { media_id: mediaId } };
       } else if (options.mediaType === "voice") {
-        // Reuse buffer from upload to avoid reading the file twice
-        const durationMs = await getVoiceDurationMs(options.mediaPath, options.mediaType, log, {
-          preReadBuffer: uploadedBuffer,
-        });
+        const durationMs = await getVoiceDurationMs(options.mediaPath, options.mediaType, log, { preReadBuffer: buffer });
         body = { msgtype: "voice", voice: { media_id: mediaId, duration: String(durationMs) } };
       } else if (options.mediaType === "video") {
         body = { msgtype: "video", video: { media_id: mediaId } };
@@ -636,6 +640,9 @@ export async function sendMessage(
         messageType: options.mediaPath && options.mediaType ? "outbound-media" : "outbound",
         quotedRef: options.quotedRef,
         log,
+        senderId: "bot",
+        senderName: "OpenClaw",
+        chatType: inferConversationChatType(options.conversationId || conversationId),
         delivery: {
           ...delivery,
           kind: "session",
@@ -655,6 +662,9 @@ export async function sendMessage(
       messageType: "outbound-proactive",
       quotedRef: options.quotedRef,
       log,
+      senderId: "bot",
+      senderName: "OpenClaw",
+      chatType: inferConversationChatType(options.conversationId || conversationId),
       delivery: {
         ...delivery,
         kind: isTrackingResult(result) ? "proactive-card" : "proactive-text",
