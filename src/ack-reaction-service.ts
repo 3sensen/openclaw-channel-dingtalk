@@ -27,55 +27,66 @@ type AckReactionTarget = {
   reactionName?: string;
 };
 
+type ResolvedAckReactionRequest = {
+  msgId: string;
+  conversationId: string;
+  robotCode: string;
+  reactionName: string;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
-function formatAckReactionTarget(data: AckReactionTarget): string {
+function formatAckReactionTarget(data: {
+  msgId: string;
+  conversationId: string;
+  reactionName: string;
+}): string {
   return `msgId=${data.msgId || "-"} conversationId=${data.conversationId || "-"} reactionName=${data.reactionName || DINGTALK_NATIVE_ACK_REACTION}`;
 }
 
-function resolveAckReactionPayload(config: DingTalkConfig, data: AckReactionTarget): {
-  robotCode: string;
-  reactionName: string;
-} | null {
+function resolveAckReactionRequest(
+  config: DingTalkConfig,
+  data: AckReactionTarget,
+): ResolvedAckReactionRequest | null {
   const robotCode = (data.robotCode || config.robotCode || config.clientId || "").trim();
   const reactionName =
     (data.reactionName || DINGTALK_NATIVE_ACK_REACTION).trim() || DINGTALK_NATIVE_ACK_REACTION;
   if (!robotCode || !data.msgId || !data.conversationId) {
     return null;
   }
-  return { robotCode, reactionName };
+  return {
+    msgId: data.msgId,
+    conversationId: data.conversationId,
+    robotCode,
+    reactionName,
+  };
 }
 
 async function callEmotionApi(
   config: DingTalkConfig,
-  data: AckReactionTarget,
+  request: ResolvedAckReactionRequest,
   endpoint: "reply" | "recall",
   successLog: string,
   errorLogPrefix: string,
   errorPayloadKey: "inbound.ackReactionAttach" | "inbound.ackReactionRecall",
   log?: AckReactionLogger,
 ): Promise<{ ok: boolean; error?: unknown }> {
-  const payload = resolveAckReactionPayload(config, data);
-  if (!payload) {
-    return { ok: false };
-  }
-
   try {
     const token = await getAccessToken(config, log as any);
     await axios.post(
       `https://api.dingtalk.com/v1.0/robot/emotion/${endpoint}`,
       {
-        robotCode: payload.robotCode,
-        openMsgId: data.msgId,
-        openConversationId: data.conversationId,
+        robotCode: request.robotCode,
+        openMsgId: request.msgId,
+        openConversationId: request.conversationId,
         emotionType: 2,
-        emotionName: payload.reactionName,
+        emotionName: request.reactionName,
         textEmotion: {
           emotionId: THINKING_EMOTION_ID,
-          emotionName: payload.reactionName,
-          text: payload.reactionName,
+          emotionName: request.reactionName,
+          text: request.reactionName,
           backgroundId: THINKING_EMOTION_BACKGROUND_ID,
         },
       },
@@ -119,6 +130,10 @@ export async function attachNativeAckReaction(
   data: AckReactionTarget,
   log?: AckReactionLogger,
 ): Promise<boolean> {
+  const request = resolveAckReactionRequest(config, data);
+  if (!request) {
+    return false;
+  }
   for (let index = 0; index < THINKING_REACTION_ATTACH_DELAYS_MS.length; index += 1) {
     const delayMs = THINKING_REACTION_ATTACH_DELAYS_MS[index];
     if (delayMs > 0) {
@@ -128,10 +143,10 @@ export async function attachNativeAckReaction(
     const attemptLabel = `${attempt}/${THINKING_REACTION_ATTACH_DELAYS_MS.length}`;
     const result = await callEmotionApi(
       config,
-      data,
+      request,
       "reply",
-      `[DingTalk] Native ack reaction attach succeeded (${formatAckReactionTarget(data)} attempt=${attemptLabel})`,
-      `[DingTalk] Native ack reaction attach failed (${formatAckReactionTarget(data)} attempt=${attemptLabel})`,
+      `[DingTalk] Native ack reaction attach succeeded (${formatAckReactionTarget(request)} attempt=${attemptLabel})`,
+      `[DingTalk] Native ack reaction attach failed (${formatAckReactionTarget(request)} attempt=${attemptLabel})`,
       "inbound.ackReactionAttach",
       log,
     );
@@ -143,7 +158,7 @@ export async function attachNativeAckReaction(
       break;
     }
     log?.debug?.(
-      `[DingTalk] Retrying native ack reaction attach (${formatAckReactionTarget(data)} nextAttempt=${attempt + 1}/${THINKING_REACTION_ATTACH_DELAYS_MS.length})`,
+      `[DingTalk] Retrying native ack reaction attach (${formatAckReactionTarget(request)} nextAttempt=${attempt + 1}/${THINKING_REACTION_ATTACH_DELAYS_MS.length})`,
     );
   }
   return false;
@@ -151,12 +166,12 @@ export async function attachNativeAckReaction(
 
 async function recallNativeAckReaction(
   config: DingTalkConfig,
-  data: AckReactionTarget,
+  request: ResolvedAckReactionRequest,
   log?: AckReactionLogger,
 ): Promise<boolean> {
   const result = await callEmotionApi(
     config,
-    data,
+    request,
     "recall",
     "[DingTalk] Native ack reaction recall succeeded",
     "[DingTalk] Native ack reaction recall failed",
@@ -171,11 +186,15 @@ export async function recallNativeAckReactionWithRetry(
   data: AckReactionTarget,
   log?: AckReactionLogger,
 ): Promise<void> {
+  const request = resolveAckReactionRequest(config, data);
+  if (!request) {
+    return;
+  }
   for (const delayMs of THINKING_REACTION_RECALL_DELAYS_MS) {
     if (delayMs > 0) {
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
-    if (await recallNativeAckReaction(config, data, log)) {
+    if (await recallNativeAckReaction(config, request, log)) {
       return;
     }
   }
