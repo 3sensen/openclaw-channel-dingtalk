@@ -21,6 +21,65 @@ import type {
 import type { ChannelSetupWizard } from "openclaw/plugin-sdk/setup";
 import { mergeAccountWithDefaults } from "./config";
 
+/**
+ * Preset AI Card template ID (unified template, no user configuration needed)
+ */
+export const PRESET_CARD_TEMPLATE_ID = "301508cd-5ddd-4e86-85f0-6b5312032743.schema";
+
+/**
+ * Card block for structured AI Card display
+ */
+export interface CardBlock {
+  /** Block content (currently same as markdown, for future collapsed/expanded states) */
+  text: string;
+  /** Full block content in markdown format */
+  markdown: string;
+  /** true = thinking/tool block, false = answer block */
+  isTool: boolean;
+}
+
+/**
+ * Task metadata for AI Card display
+ */
+export interface CardTaskInfo {
+  /** Task summary (optional) */
+  text?: string;
+  /** Model name (from onModelSelected callback) */
+  model?: string;
+  /** Task duration in seconds (plugin local timing) */
+  taskTime?: number;
+  /** Thinking chain depth (from onModelSelected callback) */
+  effort?: string;
+  /** DingTalk API call count (plugin local counter) */
+  dapi_usage?: number;
+}
+
+/**
+ * Interactive button for AI Card
+ */
+export interface CardBtn {
+  text: string;
+  color: string;
+  status: string;
+  event: {
+    type: "openLink" | "sendCardRequest";
+    params: Record<string, unknown>;
+  };
+}
+
+/**
+ * Complete payload for AI Card streaming
+ */
+export interface CardStreamPayload {
+  blockList: CardBlock[];
+  taskInfo: CardTaskInfo;
+  hasAction: boolean;
+  content: string;
+  hasQuote: boolean;
+  quoteContent?: string;
+  btns: CardBtn[];
+}
+
 export type AckReactionMode = "off" | "emoji" | "kaomoji";
 // Accept arbitrary strings for backward compatibility; the recommended
 // explicit modes remain: "off" | "emoji" | "kaomoji".
@@ -44,8 +103,6 @@ export interface DingTalkConfig extends OpenClawConfig {
   ackReaction?: AckReactionConfigValue;
   debug?: boolean;
   messageType?: "markdown" | "card";
-  cardTemplateId?: string;
-  cardTemplateKey?: string;
   groups?: Record<string, { systemPrompt?: string; requireMention?: boolean; groupAllowFrom?: string[] }>;
   accounts?: Record<string, DingTalkConfig>;
   // Connection robustness configuration
@@ -103,8 +160,6 @@ export interface DingTalkChannelConfig {
   ackReaction?: AckReactionConfigValue;
   debug?: boolean;
   messageType?: "markdown" | "card";
-  cardTemplateId?: string;
-  cardTemplateKey?: string;
   groups?: Record<string, { systemPrompt?: string; requireMention?: boolean; groupAllowFrom?: string[] }>;
   accounts?: Record<string, DingTalkConfig>;
   maxConnectionAttempts?: number;
@@ -765,8 +820,6 @@ export function resolveDingTalkAccount(
       ackReaction: dingtalk?.ackReaction,
       debug: dingtalk?.debug,
       messageType: dingtalk?.messageType,
-      cardTemplateId: dingtalk?.cardTemplateId,
-      cardTemplateKey: dingtalk?.cardTemplateKey,
       groups: dingtalk?.groups,
       accounts: dingtalk?.accounts,
       maxConnectionAttempts: dingtalk?.maxConnectionAttempts,
