@@ -28,13 +28,16 @@ export async function handleCardAction(params: {
   }
 
   // In group chats, only the user who initiated the conversation can stop it.
+  // Fail-closed: reject when clicker identity is missing but owner is known.
   const clickerUserId = params.analysis.userId;
   const record = resolveCardRun(outTrackId);
-  if (record?.ownerUserId && clickerUserId && record.ownerUserId !== clickerUserId) {
-    params.log?.info?.(
-      `[${params.accountId}] [DingTalk][CardStop] ignored: clicker=${clickerUserId} is not owner=${record.ownerUserId}`,
-    );
-    return { handled: true };
+  if (record?.ownerUserId) {
+    if (!clickerUserId || record.ownerUserId !== clickerUserId) {
+      params.log?.info?.(
+        `[${params.accountId}] [DingTalk][CardStop] rejected: clicker=${clickerUserId ?? "unknown"} owner=${record.ownerUserId}`,
+      );
+      return { handled: true };
+    }
   }
 
   const result = await stopCardRun({

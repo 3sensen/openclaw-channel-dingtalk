@@ -108,7 +108,7 @@ import {
   resetProactivePermissionHintStateForTest,
 } from "../../src/inbound-handler";
 import * as messageContextStore from "../../src/message-context-store";
-import { clearCardRunRegistryForTest, markCardRunStopRequested } from "../../src/card/card-run-registry";
+import { clearCardRunRegistryForTest } from "../../src/card/card-run-registry";
 import { recordProactiveRiskObservation } from "../../src/proactive-risk-registry";
 import {
   clearTargetDirectoryStateCache,
@@ -5806,8 +5806,6 @@ describe("inbound-handler", () => {
     expect(users[0]?.canonicalUserId).toBe("staff_user_1");
   });
 
-
-  // Duplicate test block (12 tests) removed — already present in the upstream version above.
 
   // ==================== @Sub-Agent 回归测试 ====================
   describe('@sub-agent feature', () => {

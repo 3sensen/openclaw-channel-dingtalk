@@ -232,6 +232,41 @@ describe('card-action-handler', () => {
         expect(isCardRunStopRequested('track_group')).toBe(false);
     });
 
+    it('rejects stop when clicker userId is missing in group chat (fail-closed)', async () => {
+        const card = {
+            cardInstanceId: 'card_nouser',
+            outTrackId: 'track_nouser',
+            state: AICardStatus.INPUTING,
+            lastUpdated: Date.now(),
+        } as any;
+
+        registerCardRun('track_nouser', {
+            accountId: 'main',
+            sessionKey: 'session_nouser',
+            agentId: 'agent_1',
+            ownerUserId: 'owner_user',
+            card,
+        });
+
+        const result = await handleCardAction({
+            analysis: {
+                summary: 'btn_stop',
+                actionId: 'btn_stop',
+                outTrackId: 'track_nouser',
+                userId: undefined,
+            } as any,
+            cfg: {} as any,
+            accountId: 'main',
+            config: {} as any,
+            log: undefined,
+        });
+
+        expect(result.handled).toBe(true);
+        expect(shared.dispatchDingTalkCardStopCommandMock).not.toHaveBeenCalled();
+        expect(shared.finishStoppedAICardMock).not.toHaveBeenCalled();
+        expect(isCardRunStopRequested('track_nouser')).toBe(false);
+    });
+
     it('continues card finalize even if native stop dispatch fails', async () => {
         shared.dispatchDingTalkCardStopCommandMock.mockRejectedValueOnce(
             new Error('dispatch failed'),
