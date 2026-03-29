@@ -29,6 +29,7 @@ vi.mock("axios", () => ({
   default: {
     post: vi.fn(),
     get: vi.fn(),
+    isAxiosError: (err: unknown) => Boolean((err as { isAxiosError?: boolean })?.isAxiosError),
   },
   isAxiosError: (err: unknown) => Boolean((err as { isAxiosError?: boolean })?.isAxiosError),
 }));
@@ -243,6 +244,50 @@ describe("inbound-handler", () => {
     expect(result).toBeTruthy();
     expect(result?.mimeType).toBe("image/png");
     expect(result?.path).toContain("/.openclaw/media/inbound/");
+  });
+
+  it("downloadMedia applies timeout to the downloadUrl fetch", async () => {
+    mockedAxiosPost.mockResolvedValueOnce({
+      data: { downloadUrl: "https://download.url/file" },
+    } as any);
+    mockedAxiosGet.mockResolvedValueOnce({
+      data: Buffer.from("abc"),
+      headers: { "content-type": "image/png" },
+    } as any);
+
+    await downloadMedia(
+      { clientId: "id", clientSecret: "sec", robotCode: "robot_1" } as any,
+      "download_code_1",
+    );
+
+    expect(mockedAxiosGet).toHaveBeenCalledWith("https://download.url/file", {
+      responseType: "arraybuffer",
+      timeout: 15_000,
+    });
+  });
+
+  it("downloadMedia logs the download host when the downloadUrl fetch fails", async () => {
+    const log = { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    mockedAxiosPost.mockResolvedValueOnce({
+      data: { downloadUrl: "https://download.url/file" },
+    } as any);
+    mockedAxiosGet.mockRejectedValueOnce({
+      isAxiosError: true,
+      code: "ETIMEDOUT",
+      message: "connect ETIMEDOUT",
+      request: {},
+    });
+
+    const result = await downloadMedia(
+      { clientId: "id", clientSecret: "sec", robotCode: "robot_1" } as any,
+      "download_code_1",
+      log as any,
+    );
+
+    expect(result).toBeNull();
+    expect(log.error).toHaveBeenCalledWith(
+      expect.stringContaining("host=download.url"),
+    );
   });
 
   it("downloadMedia passes mediaMaxMb as maxBytes to saveMediaBuffer", async () => {

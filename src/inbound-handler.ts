@@ -240,6 +240,8 @@ type ReplyChunkInfo = {
   kind?: string;
 };
 
+const INBOUND_MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
+
 /**
  * Download DingTalk media file via runtime media service (sandbox-compatible).
  * Files are stored in the global media inbound directory.
@@ -250,6 +252,7 @@ export async function downloadMedia(
   log?: any,
 ): Promise<MediaFile | null> {
   const rt = getDingTalkRuntime();
+  let downloadUrl: string | undefined;
   const formatAxiosErrorData = (value: unknown): string | undefined => {
     if (value === null || value === undefined) {
       return undefined;
@@ -289,7 +292,7 @@ export async function downloadMedia(
       { headers: { "x-acs-dingtalk-access-token": token } },
     );
     const payload = response.data as Record<string, any>;
-    const downloadUrl = payload?.downloadUrl ?? payload?.data?.downloadUrl;
+    downloadUrl = payload?.downloadUrl ?? payload?.data?.downloadUrl;
     if (!downloadUrl) {
       const payloadDetail = formatAxiosErrorData(payload);
       log?.error?.(
@@ -297,7 +300,10 @@ export async function downloadMedia(
       );
       return null;
     }
-    const mediaResponse = await axios.get(downloadUrl, { responseType: "arraybuffer" });
+    const mediaResponse = await axios.get(downloadUrl, {
+      responseType: "arraybuffer",
+      timeout: INBOUND_MEDIA_DOWNLOAD_TIMEOUT_MS,
+    });
     const contentType = mediaResponse.headers["content-type"] || "application/octet-stream";
     const buffer = Buffer.from(mediaResponse.data as ArrayBuffer);
 
@@ -310,6 +316,16 @@ export async function downloadMedia(
     return { path: saved.path, mimeType: saved.contentType ?? contentType };
   } catch (err: any) {
     if (log?.error) {
+      const downloadHost = (() => {
+        if (!downloadUrl) {
+          return "unknown";
+        }
+        try {
+          return new URL(downloadUrl).host || "unknown";
+        } catch {
+          return "unknown";
+        }
+      })();
       if (axios.isAxiosError(err)) {
         const status = err.response?.status;
         const statusText = err.response?.statusText;
@@ -317,7 +333,7 @@ export async function downloadMedia(
         const code = err.code ? ` code=${err.code}` : "";
         const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
         log.error(
-          `[DingTalk] Failed to download media:${statusLabel}${code} message=${err.message}`,
+          `[DingTalk] Failed to download media: host=${downloadHost}${statusLabel}${code} message=${err.message}`,
         );
         if (err.response?.data !== undefined) {
           log.error(formatDingTalkErrorPayloadLog("inbound.downloadMedia", err.response.data));
@@ -325,7 +341,7 @@ export async function downloadMedia(
           log.error(`[DingTalk] downloadMedia response data: ${dataDetail}`);
         }
       } else {
-        log.error(`[DingTalk] Failed to download media: ${err.message}`);
+        log.error(`[DingTalk] Failed to download media: host=${downloadHost} ${err.message}`);
       }
     }
     return null;
