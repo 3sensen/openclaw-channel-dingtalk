@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readNamespaceJson, writeNamespaceJsonAtomic } from "./persistence-store";
+import { listNamespaceScopes, readNamespaceJson, writeNamespaceJsonAtomic } from "./persistence-store";
 import type { AttachmentTextSource, Logger, QuotedRef } from "./types";
 
 const MESSAGE_CONTEXT_NAMESPACE = "messages.context";
@@ -109,6 +109,11 @@ export interface UpsertInboundMessageContextParams extends BaseUpsertParams {
 export interface UpsertOutboundMessageContextParams extends BaseUpsertParams {
   msgId?: string;
   delivery?: MessageRecord["delivery"];
+}
+
+export interface KnownConversationScope {
+  conversationId: string;
+  chatType: "direct" | "group";
 }
 
 interface ScopeParams {
@@ -858,4 +863,24 @@ export function listMessageContexts(
   return state.recentByCreatedAt
     .map((msgId) => state.records[msgId])
     .filter((record): record is MessageRecord => Boolean(record) && !isRecordExpired(record, nowMs));
+}
+
+export function listKnownConversationScopes(params: {
+  storePath?: string;
+  accountId: string;
+  chatType?: "direct" | "group";
+}): KnownConversationScope[] {
+  if (!params.storePath) {
+    return [];
+  }
+  return listNamespaceScopes(MESSAGE_CONTEXT_NAMESPACE, { storePath: params.storePath })
+    .filter((scope) => scope.accountId === params.accountId && typeof scope.conversationId === "string")
+    .map((scope) => ({
+      conversationId: scope.conversationId as string,
+      chatType: inferConversationChatType(scope.conversationId as string),
+    }))
+    .filter((scope, index, arr) => (
+      (!params.chatType || scope.chatType === params.chatType)
+      && arr.findIndex((candidate) => candidate.conversationId === scope.conversationId) === index
+    ));
 }
