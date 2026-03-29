@@ -23,6 +23,7 @@ export interface ReplyOptions {
   onPartialReply?: (payload: { text?: string }) => void | Promise<void>;
   onReasoningStream?: (payload: { text?: string }) => void | Promise<void>;
   onAssistantMessageStart?: () => void | Promise<void>;
+  onModelSelected?: (ctx: { provider: string; model: string; thinkLevel?: string }) => void;
 }
 
 export interface ReplyStrategy {
