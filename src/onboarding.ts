@@ -126,8 +126,6 @@ function applyAccountConfig(params: {
       ? { mediaUrlAllowlist: input.mediaUrlAllowlist }
       : {}),
     ...(input.messageType ? { messageType: input.messageType } : {}),
-    ...(input.cardTemplateId ? { cardTemplateId: input.cardTemplateId } : {}),
-    ...(input.cardTemplateKey ? { cardTemplateKey: input.cardTemplateKey } : {}),
     ...(typeof input.maxReconnectCycles === "number"
       ? { maxReconnectCycles: input.maxReconnectCycles }
       : {}),
