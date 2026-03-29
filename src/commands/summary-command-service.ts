@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import {
   type ConversationHistorySlice,
   queryConversationHistory,
 } from "./group-history-store";
 import { getDingTalkRuntime } from "../runtime";
-import type { HandleDingTalkMessageParams } from "../types";
+import type { HandleDingTalkMessageParams, Logger } from "../types";
 
 export interface ParsedSummaryCommand {
   scope: "summary" | "unknown";
@@ -31,6 +32,7 @@ export interface SummaryQueryParams {
 export interface GenerateSummaryNarrativeParams {
   rt: ReturnType<typeof getDingTalkRuntime>;
   cfg: HandleDingTalkMessageParams["cfg"];
+  log?: Logger;
   accountId: string;
   senderId: string;
   senderName: string;
@@ -50,6 +52,8 @@ export interface GenerateSummaryNarrativeParams {
 
 const DEFAULT_SUMMARY_WINDOW_LABEL = "最近 1 天";
 const SUMMARY_RECENT_LIMIT_PER_CONVERSATION = 8;
+const SUMMARY_PROMPT_MAX_CHARS = 24_000;
+const SUMMARY_COMMAND_REGEX = /^\/summary(?:\s|$)/i;
 const SUMMARY_COMMAND_HELP_LINES = [
   "Summary 命令用法：",
   "- /summary",
@@ -64,7 +68,8 @@ const SUMMARY_COMMAND_HELP_LINES = [
 
 function buildSummarySessionKey(routeSessionKey: string): string {
   const baseKey = routeSessionKey.trim();
-  return baseKey ? `${baseKey}::summary` : "dingtalk::summary";
+  const suffix = randomUUID();
+  return baseKey ? `${baseKey}::summary::${suffix}` : `dingtalk::summary::${suffix}`;
 }
 
 function parseTimeWindow(raw: string | undefined, nowMs: number): { sinceTs?: number; label: string; valid: boolean } {
@@ -112,7 +117,7 @@ function formatConversationLabel(slice: ConversationHistorySlice): string {
 }
 
 export function isSummaryCommandText(text: string | undefined): boolean {
-  return String(text || "").trim().toLowerCase().startsWith("/summary");
+  return SUMMARY_COMMAND_REGEX.test(String(text || "").trim());
 }
 
 export function formatSummaryCommandHelp(): string {
@@ -142,7 +147,7 @@ export function resolveSummaryMentionNames(
 
 export function parseSummaryCommand(text: string | undefined, nowMs: number = Date.now()): ParsedSummaryCommand {
   const raw = String(text || "").trim();
-  if (!raw || !raw.toLowerCase().startsWith("/summary")) {
+  if (!isSummaryCommandText(raw)) {
     return { scope: "unknown", windowLabel: DEFAULT_SUMMARY_WINDOW_LABEL };
   }
   const tokens = raw.split(/\s+/).filter(Boolean);
@@ -193,6 +198,21 @@ export function parseSummaryCommand(text: string | undefined, nowMs: number = Da
       : { scope: "unknown", windowLabel: DEFAULT_SUMMARY_WINDOW_LABEL };
   }
   return { scope: "unknown", windowLabel: DEFAULT_SUMMARY_WINDOW_LABEL };
+}
+
+function takeMaterialLinesWithinLimit(lines: string[], maxChars: number): string[] {
+  const selected: string[] = [];
+  let usedChars = 0;
+  for (const line of lines) {
+    const next = line.length + (selected.length > 0 ? 1 : 0);
+    if (usedChars + next > maxChars) {
+      selected.push("...（其余材料已截断）");
+      break;
+    }
+    selected.push(line);
+    usedChars += next;
+  }
+  return selected;
 }
 
 export function querySummarySlices(params: SummaryQueryParams): ConversationHistorySlice[] {
@@ -251,7 +271,7 @@ export function formatSummaryReply(params: {
       const segment = slice.summarySegments.at(-1);
       if (segment) {
         lines.push(
-          `- 历史摘要：${segment.messageCount} 条，覆盖 ${formatTime(segment.fromTs) || "unknown"} ~ ${formatTime(segment.toTs) || "unknown"}`,
+          `- 历史消息片段：${segment.messageCount} 条，覆盖 ${formatTime(segment.fromTs) || "unknown"} ~ ${formatTime(segment.toTs) || "unknown"}`,
         );
         lines.push(`  ${segment.summary.split("\n").slice(0, 3).join(" / ")}`);
       }
@@ -298,7 +318,7 @@ export function buildSummaryNarrativePrompt(params: SummaryQueryParams & { slice
     materialLines.push(`## 会话 ${formatConversationLabel(slice)}`);
     for (const segment of slice.summarySegments.slice(-3)) {
       materialLines.push(
-        `- 历史摘要段：${segment.messageCount} 条，覆盖 ${formatTime(segment.fromTs) || "unknown"} ~ ${formatTime(segment.toTs) || "unknown"}`,
+        `- 历史消息片段：${segment.messageCount} 条，覆盖 ${formatTime(segment.fromTs) || "unknown"} ~ ${formatTime(segment.toTs) || "unknown"}`,
       );
       materialLines.push(segment.summary);
     }
@@ -321,14 +341,14 @@ export function buildSummaryNarrativePrompt(params: SummaryQueryParams & { slice
     "5. 保持简洁，优先中文自然表达，不要输出 JSON。",
     "",
     "材料：",
-    ...materialLines,
+    ...takeMaterialLinesWithinLimit(materialLines, SUMMARY_PROMPT_MAX_CHARS),
   ].join("\n");
 
   const systemPrompt = [
     "你在为 owner 生成 DingTalk 会话摘要。",
     "只能基于给定材料总结，不能编造未出现的事实。",
     "不同会话、不同时间段、不同发送者必须严格区分。",
-    "如果材料里只有局部消息或摘要段，要明确这是局部总结。",
+    "如果材料里只有局部消息或消息片段，要明确这是局部总结。",
   ].join("\n");
 
   return { fallbackReply, userPrompt, systemPrompt, slices };
@@ -398,7 +418,10 @@ export async function generateSummaryNarrative(
     if (!finalText && queuedFinalText) {
       finalText = queuedFinalText;
     }
-  } catch {
+  } catch (err: unknown) {
+    params.log?.warn?.(
+      `[DingTalk][Summary] Narrative generation failed, using fallback: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return prompt.fallbackReply;
   }
 

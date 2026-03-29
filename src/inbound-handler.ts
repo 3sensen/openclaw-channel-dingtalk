@@ -698,6 +698,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       const summaryReply = await generateSummaryNarrative({
         rt,
         cfg,
+        log,
         accountId,
         senderId,
         senderName,

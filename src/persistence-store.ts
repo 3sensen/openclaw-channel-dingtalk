@@ -28,6 +28,10 @@ export interface WriteNamespaceJsonOptions<T> extends ResolveNamespacePathOption
   log?: Logger;
 }
 
+export interface ListNamespaceScopesOptions {
+  storePath: string;
+}
+
 const NAMESPACE_ROOT_DIR = "dingtalk-state";
 
 function toErrorMessage(err: unknown): string {
@@ -47,6 +51,15 @@ function sanitizeSegment(value: string): string {
 
 function encodeScopeValue(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function decodeScopeValue(value: string): string | null {
+  try {
+    const decoded = Buffer.from(value, "base64url").toString("utf8").trim();
+    return decoded || null;
+  } catch {
+    return null;
+  }
 }
 
 function buildScopeSuffix(scope?: PersistenceScope): string {
@@ -128,4 +141,64 @@ export function writeNamespaceJsonAtomic<T>(
       fs.rmSync(tempPath, { force: true });
     }
   }
+}
+
+export function listNamespaceScopes(namespace: string, options: ListNamespaceScopesOptions): PersistenceScope[] {
+  const baseDir = path.join(path.dirname(options.storePath), NAMESPACE_ROOT_DIR);
+  const safeNamespace = sanitizeSegment(namespace.trim());
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(baseDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const results: PersistenceScope[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+    if (entry.name === `${safeNamespace}.json`) {
+      results.push({});
+      continue;
+    }
+    if (!entry.name.startsWith(`${safeNamespace}.`) || !entry.name.endsWith(".json")) {
+      continue;
+    }
+    const rawSuffix = entry.name.slice(`${safeNamespace}.`.length, -".json".length);
+    const scope: PersistenceScope = {};
+    let valid = true;
+    for (const segment of rawSuffix.split(".")) {
+      const dashIndex = segment.indexOf("-");
+      if (dashIndex <= 0) {
+        valid = false;
+        break;
+      }
+      const key = segment.slice(0, dashIndex);
+      const value = decodeScopeValue(segment.slice(dashIndex + 1));
+      if (!value) {
+        valid = false;
+        break;
+      }
+      if (key === "account") {
+        scope.accountId = value;
+      } else if (key === "agent") {
+        scope.agentId = value;
+      } else if (key === "conversation") {
+        scope.conversationId = value;
+      } else if (key === "group") {
+        scope.groupId = value;
+      } else if (key === "target") {
+        scope.targetId = value;
+      } else {
+        valid = false;
+        break;
+      }
+    }
+    if (valid) {
+      results.push(scope);
+    }
+  }
+
+  return results;
 }

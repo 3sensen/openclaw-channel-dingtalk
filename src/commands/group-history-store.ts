@@ -1,6 +1,6 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import {
+  inferConversationChatType,
+  listKnownConversationScopes,
   listMessageContexts,
   type MessageRecord,
 } from "../message-context-store";
@@ -13,9 +13,6 @@ const MAX_HISTORY_ENTRIES = 200;
 const ROLLUP_CHUNK_SIZE = 20;
 const MAX_SUMMARY_SEGMENTS = 90;
 const MAX_SEGMENT_CHARS = 1600;
-const NAMESPACE_ROOT_DIR = "dingtalk-state";
-const MESSAGE_CONTEXT_NAMESPACE_FILE = "messages.context";
-
 export interface GroupHistoryEntry {
   sender: string;
   senderId?: string;
@@ -162,59 +159,20 @@ function listConversationCandidates(params: {
   ).toSorted((left, right) => right.updatedAt - left.updatedAt);
 }
 
-function decodeScopeValue(value: string): string | null {
-  try {
-    return Buffer.from(value, "base64url").toString("utf8").trim() || null;
-  } catch {
-    return null;
-  }
-}
-
 function listMessageContextConversationCandidates(params: {
   storePath?: string;
   accountId: string;
   chatType?: "direct" | "group";
 }): ConversationHistoryIndexEntry[] {
-  if (!params.storePath) {
-    return [];
-  }
-  const stateDir = path.join(path.dirname(params.storePath), NAMESPACE_ROOT_DIR);
-  let entries: string[] = [];
-  try {
-    entries = fs.readdirSync(stateDir);
-  } catch {
-    return [];
-  }
-
-  const accountToken = Buffer.from(params.accountId, "utf8").toString("base64url");
-  const prefix = `${MESSAGE_CONTEXT_NAMESPACE_FILE}.account-${accountToken}.conversation-`;
-  const results: ConversationHistoryIndexEntry[] = [];
-
-  for (const entry of entries) {
-    if (!entry.startsWith(prefix) || !entry.endsWith(".json")) {
-      continue;
-    }
-    const conversationToken = entry.slice(prefix.length, -".json".length);
-    const conversationId = decodeScopeValue(conversationToken);
-    if (!conversationId) {
-      continue;
-    }
-    const chatType = conversationId.startsWith("cid") ? "group" as const : "direct" as const;
-    if (params.chatType && params.chatType !== chatType) {
-      continue;
-    }
-    results.push({
-      conversationId,
-      chatType,
-      title: conversationId,
-      updatedAt: 0,
-    });
-  }
-
-  return results;
+  return listKnownConversationScopes(params).map((scope) => ({
+    conversationId: scope.conversationId,
+    chatType: scope.chatType,
+    title: scope.conversationId,
+    updatedAt: 0,
+  }));
 }
 
-function summarizeEntries(entries: GroupHistoryEntry[]): GroupHistorySummarySegment | null {
+function formatEntriesToSegment(entries: GroupHistoryEntry[]): GroupHistorySummarySegment | null {
   if (entries.length === 0) {
     return null;
   }
@@ -254,7 +212,7 @@ function rollupEntriesToLimit(entries: GroupHistoryEntry[], retainLimit: number)
   while (remainingEntries.length > retainLimit) {
     const chunk = remainingEntries.slice(0, ROLLUP_CHUNK_SIZE);
     remainingEntries = remainingEntries.slice(ROLLUP_CHUNK_SIZE);
-    const segment = summarizeEntries(chunk);
+    const segment = formatEntriesToSegment(chunk);
     if (segment) {
       nextSegments.push(segment);
     }
@@ -287,7 +245,7 @@ export function queryConversationHistory(params: ConversationHistoryQuery): Conv
         .filter((conversationId) => !candidates.some((entry) => entry.conversationId === conversationId))
         .map((conversationId) => ({
           conversationId,
-          chatType: conversationId.startsWith("cid") ? "group" as const : "direct" as const,
+          chatType: inferConversationChatType(conversationId),
           title: conversationId,
           updatedAt: 0,
         }))

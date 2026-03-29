@@ -4,7 +4,11 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { queryConversationHistory } from "../../src/commands/group-history-store";
-import { upsertInboundMessageContext, upsertOutboundMessageContext } from "../../src/message-context-store";
+import {
+  listKnownConversationScopes,
+  upsertInboundMessageContext,
+  upsertOutboundMessageContext,
+} from "../../src/message-context-store";
 import {
   clearTargetDirectoryStateCache,
   upsertObservedGroupTarget,
@@ -108,6 +112,15 @@ describe("group-history-store", () => {
       chatType: "group",
     });
 
+    expect(listKnownConversationScopes({
+      storePath,
+      accountId: "main",
+    })).toEqual([
+      {
+        conversationId: "cid_group_from_context",
+        chatType: "group",
+      },
+    ]);
     expect(slices.some((slice) => slice.conversation.conversationId === "cid_group_from_context")).toBe(true);
   });
 });
