@@ -50,6 +50,10 @@ const inMemoryCardContentStore = new Map<
   }
 >();
 
+function inferConversationChatType(conversationId: string): "direct" | "group" {
+  return conversationId.startsWith("cid") ? "group" : "direct";
+}
+
 function pruneInMemoryCardContentEntries(
   entries: Array<{ content: string; createdAt: number; expiresAt: number }>,
   nowMs: number,
