@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createCardReplyStrategy } from "../../src/reply-strategy-card";
 import * as cardService from "../../src/card-service";
 import * as sendService from "../../src/send-service";
+import * as sessionState from "../../src/session-state";
 import { AICardStatus } from "../../src/types";
 import type { AICardInstance } from "../../src/types";
 import type { ReplyStrategyContext } from "../../src/reply-strategy";
@@ -25,6 +26,9 @@ vi.mock("../../src/session-state", () => ({
     clearAllSessionStatesForTest: vi.fn(),
 }));
 
+const getSessionStateMock = vi.mocked(sessionState.getSessionState);
+const getTaskTimeSecondsMock = vi.mocked(sessionState.getTaskTimeSeconds);
+
 vi.mock("../../src/send-service", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../../src/send-service")>();
     return {
@@ -37,6 +41,8 @@ vi.mock("../../src/send-service", async (importOriginal) => {
 
 const finishAICardMock = vi.mocked(cardService.finishAICard);
 const sendMessageMock = vi.mocked(sendService.sendMessage);
+const updateSessionStateMock = vi.mocked(sessionState.updateSessionState);
+const clearSessionStateMock = vi.mocked(sessionState.clearSessionState);
 
 function makeCard(overrides: Partial<AICardInstance> = {}): AICardInstance {
     return {
@@ -73,6 +79,10 @@ describe("reply-strategy-card", () => {
     beforeEach(() => {
         finishAICardMock.mockClear();
         sendMessageMock.mockClear().mockResolvedValue({ ok: true });
+        updateSessionStateMock.mockClear();
+        clearSessionStateMock.mockClear();
+        getSessionStateMock.mockClear().mockReturnValue(undefined);
+        getTaskTimeSecondsMock.mockClear().mockReturnValue(undefined);
     });
 
     describe("getReplyOptions", () => {
@@ -102,6 +112,27 @@ describe("reply-strategy-card", () => {
             const opts = createCardReplyStrategy(buildCtx(card)).getReplyOptions();
             expect(opts.onReasoningStream).toBeDefined();
             expect(opts.onAssistantMessageStart).toBeDefined();
+        });
+
+        it("registers onModelSelected callback", () => {
+            const card = makeCard();
+            const opts = createCardReplyStrategy(buildCtx(card)).getReplyOptions();
+            expect(opts.onModelSelected).toBeDefined();
+        });
+
+        it("onModelSelected calls updateSessionState with model and effort", async () => {
+            const card = makeCard();
+            const ctx = buildCtx(card, { accountId: "account_1" });
+            const opts = createCardReplyStrategy(ctx).getReplyOptions();
+
+            await opts.onModelSelected?.({ provider: "openai", model: "gpt-4", thinkLevel: "high" });
+
+            expect(updateSessionStateMock).toHaveBeenCalledWith(
+                "account_1",
+                "cid_1",
+                { model: "gpt-4", effort: "high" },
+                expect.anything(),
+            );
         });
     });
 
@@ -334,6 +365,57 @@ describe("reply-strategy-card", () => {
             // Fallback answer block should be present
             expect(blockList.some((b: any) => !b.isTool && b.text.includes("附件已发送，请查收。"))).toBe(true);
         });
+
+        it("clears session state after successful finalize", async () => {
+            const card = makeCard();
+            const ctx = buildCtx(card, { accountId: "account_1" });
+            const strategy = createCardReplyStrategy(ctx);
+            await strategy.deliver({ text: "answer", mediaUrls: [], kind: "final" });
+            await strategy.finalize();
+
+            expect(clearSessionStateMock).toHaveBeenCalledWith("account_1", "cid_1");
+        });
+
+        it("clears session state after FAILED fallback", async () => {
+            const card = makeCard({ state: AICardStatus.FAILED, lastStreamedContent: "partial" });
+            const ctx = buildCtx(card, { accountId: "account_2" });
+            const strategy = createCardReplyStrategy(ctx);
+            await strategy.finalize();
+
+            expect(clearSessionStateMock).toHaveBeenCalledWith("account_2", "cid_1");
+        });
+
+        it("reads session state for taskInfo assembly", async () => {
+            const card = makeCard();
+            const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+            const ctx = buildCtx(card, { accountId: "account_task", log: log as any });
+
+            // Mock session state to return specific values
+            getSessionStateMock.mockReturnValueOnce({
+                model: "claude-3",
+                effort: "high",
+                taskStartTime: Date.now() - 5000,
+                dapiCount: 5,
+            });
+            getTaskTimeSecondsMock.mockReturnValueOnce(5);
+
+            const strategy = createCardReplyStrategy(ctx);
+            await strategy.deliver({ text: "answer", mediaUrls: [], kind: "final" });
+            await strategy.finalize();
+
+            // Verify session state was read for taskInfo
+            expect(getSessionStateMock).toHaveBeenCalledWith("account_task", "cid_1");
+            expect(getTaskTimeSecondsMock).toHaveBeenCalledWith("account_task", "cid_1");
+
+            // Verify taskInfo was logged
+            const debugCalls = log.debug.mock.calls.map((args) => String(args[0]));
+            const taskInfoLog = debugCalls.find((msg) => msg.includes("Finalizing with taskInfo"));
+            expect(taskInfoLog).toBeDefined();
+            expect(taskInfoLog).toContain('"model":"claude-3"');
+            expect(taskInfoLog).toContain('"effort":"high"');
+            expect(taskInfoLog).toContain('"taskTime":5');
+            expect(taskInfoLog).toContain('"dapi_usage":5');
+        });
     });
 
     describe("abort", () => {
@@ -361,6 +443,15 @@ describe("reply-strategy-card", () => {
             const strategy = createCardReplyStrategy(buildCtx(card));
             await strategy.abort(new Error("dispatch crashed"));
             expect(finishAICardMock).not.toHaveBeenCalled();
+        });
+
+        it("clears session state after abort", async () => {
+            const card = makeCard();
+            const ctx = buildCtx(card, { accountId: "account_abort" });
+            const strategy = createCardReplyStrategy(ctx);
+            await strategy.abort(new Error("dispatch crashed"));
+
+            expect(clearSessionStateMock).toHaveBeenCalledWith("account_abort", "cid_1");
         });
     });
 });
