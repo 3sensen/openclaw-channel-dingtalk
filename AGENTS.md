@@ -56,7 +56,6 @@ Planned domain summary:
 │   ├── message-context-store.ts    # Unified short-TTL message context persistence
 │   ├── media-utils.ts              # Media type detect + upload/download helpers
 │   ├── attachment-text-extractor.ts # Text extraction for supported attachments
-│   ├── quoted-file-service.ts      # Quote/file recovery helpers
 │   ├── docs-service.ts             # DingTalk docs gateway methods
 │   ├── feedback-learning-service.ts # Learning signal handling
 │   ├── feedback-learning-store.ts  # Learning persistence
@@ -77,6 +76,7 @@ Planned domain summary:
 │   │   ├── dynamic-ack-reaction-events.ts     # Reaction event definitions
 │   │   └── dynamic-ack-reaction-progress.ts   # Reaction progress mapping
 │   ├── messaging/
+│   │   ├── quoted-file-service.ts  # Quote/file recovery helpers
 │   │   ├── quoted-context.ts       # Quoted context assembly
 │   │   └── quoted-ref.ts           # Structured quotedRef helpers
 │   └── targeting/
