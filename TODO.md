@@ -42,7 +42,7 @@
 - [#358 Markdown 表格经 convertMarkdownTablesToPlainText 转换后在钉钉显示格式丢失](https://github.com/soimy/openclaw-channel-dingtalk/issues/358)（状态：已关闭（2026-04-08 自动关闭，可重开））
 - [#379 千问免费模型token 失效，钉钉前端没有反馈](https://github.com/soimy/openclaw-channel-dingtalk/issues/379)（状态：已关闭（2026-04-08 自动关闭，可重开））
 - [#407 使用card模式接收不到消息](https://github.com/soimy/openclaw-channel-dingtalk/issues/407)（状态：开启）（Stale）
-- [#513 AI Card stays frozen at first embedded run's final state when session-recovery triggers a second run](https://github.com/soimy/openclaw-channel-dingtalk/issues/513)（状态：开启）
+- [#513 AI Card stays frozen at first embedded run's final state when session-recovery triggers a second run](https://github.com/soimy/openclaw-channel-dingtalk/issues/513)（状态：已关闭（关联 PR #518））
 
 任务：
 - [ ] 回归 Done 提前结束问题
@@ -96,8 +96,8 @@
 - [ ] 跟进 `#358` 的表格转换后续（是否移除历史 `convertMarkdownTablesToPlainText` 路径）并补跨端渲染回归
 - [ ] 跟进 `#379` 的“上游返回 0 字节时钉钉前端无错误反馈”场景，明确插件侧兜底提示与日志建议（`/verbose on`）边界
 - [ ] 跟进 `#407` 的“card 模式下无回复 + ackReaction 不显示”现场，区分卡片发送链路异常与 thinking 反馈配置问题
-- [ ] 跟进 `#513` 的 session-recovery 卡片冻结问题：明确 timeout/abort 首轮 finalize 后是否允许 resume 或二次 finalize，避免第二轮 embedded run 成功却无法覆盖终态
-  - [ ] [#518 fix(card): deliver markdown fallback when session-recovery updates a finished card](https://github.com/soimy/openclaw-channel-dingtalk/pull/518)（状态：新（CI 通过））
+- [ ] （拟完成，请评估）跟进 `#513` 的 session-recovery 卡片冻结问题：当前已补 markdown fallback 兜底，仍需在 Anthropic thinking recovery 实机路径确认第二轮恢复后的最终用户观感
+  - [x] [#518 fix(card): deliver markdown fallback when session-recovery updates a finished card](https://github.com/soimy/openclaw-channel-dingtalk/pull/518)（状态：合并）
 - [ ] 跟进 `#457` 对 `/reasoning on` 与 `/reasoning stream` 的统一交付方案，确认多轮 assistant turn 与 finalize 边界在 card 模式稳定
   - [ ] [#457 fix(card): unify reasoning-on and reasoning-stream block delivery](https://github.com/soimy/openclaw-channel-dingtalk/pull/457)（状态：审核中）
 - [ ] 复核 `#419` 关闭结论：确认“会话锁外提前建卡/空 Done 卡片”修复是否已入 `main`；若未落地，按最小补丁重提
@@ -108,7 +108,7 @@
 - [#366 无法发送本机文件到我的钉钉问题](https://github.com/soimy/openclaw-channel-dingtalk/issues/366)（状态：已关闭（2026-04-08 自动关闭，可重开））
 - [#391 能否做到帮我从钉盘找图片/文件并发给我](https://github.com/soimy/openclaw-channel-dingtalk/issues/391)（状态：已关闭（2026-04-08 自动关闭，可重开））
 - [#422 机器人无法发送文件的问题](https://github.com/soimy/openclaw-channel-dingtalk/issues/422)（状态：开启）（Stale）
-- [#430 群聊怎么给openclaw发文件呢?](https://github.com/soimy/openclaw-channel-dingtalk/issues/430)（状态：开启）（Stale）
+- [#430 群聊怎么给openclaw发文件呢?](https://github.com/soimy/openclaw-channel-dingtalk/issues/430)（状态：开启）
 - [#482 [Bug] v3.5.1 发送文件到钉钉时文件名显示为 #fileName# 而非实际文件名](https://github.com/soimy/openclaw-channel-dingtalk/issues/482)（状态：开启）
 
 任务：
@@ -143,13 +143,13 @@
 相关 Issues：
 - [#316 钉钉机器人无法发送本地文件或者图片发给我（Dup #162）](https://github.com/soimy/openclaw-channel-dingtalk/issues/316)（状态：已关闭（2026-04-10 自动关闭，可重开））
 - [#408 使用dingtalk 单聊，接收不到返回的 tts 语音包](https://github.com/soimy/openclaw-channel-dingtalk/issues/408)（状态：已关闭（2026-04-09 自动关闭，可重开））
-- [#516 mp3 audio file sent as voice message instead of file attachment (v3.5.3)](https://github.com/soimy/openclaw-channel-dingtalk/issues/516)（状态：开启）
+- [#516 mp3 audio file sent as voice message instead of file attachment (v3.5.3)](https://github.com/soimy/openclaw-channel-dingtalk/issues/516)（状态：已关闭（关联 PR #517））
 
 任务：
 - [ ] 回归本地图片发送
 - [ ] 回归语音消息发送
-- [ ] 跟进 `#516` 的媒体类型判定回归：区分 `.mp3` 文件附件与语音消息 API 路径，确认 v3.5.3 升级后 `asVoice` / 文件上传分流是否发生误判
-  - [ ] [#517 fix(media): default audio files to attachment instead of voice message](https://github.com/soimy/openclaw-channel-dingtalk/pull/517)（状态：审核中（CI 通过））
+- [ ] （拟完成，请评估）跟进 `#516` 的媒体类型判定回归：`.mp3` 默认按附件发送的修复已合入，仍需补一次 v3.5.3 升级后的文件/语音分流实机回归
+  - [x] [#517 fix(media): default audio files to attachment instead of voice message](https://github.com/soimy/openclaw-channel-dingtalk/pull/517)（状态：合并）
 - [ ] 回归入站媒体大小限制覆盖配置
 - [ ] （拟完成，请评估）评估 AI Card 内媒体一体化展示是否值得推进
   - [x] [#181 add mediaMaxMb override for inbound media size limit](https://github.com/soimy/openclaw-channel-dingtalk/pull/181)（状态：合并）
@@ -293,6 +293,7 @@
 相关 Issues：
 - [#353 如何让龙虾在群里中@其他成员](https://github.com/soimy/openclaw-channel-dingtalk/issues/353)（状态：开启）（Stale）
 - [#417 在钉钉群里，@机器人后让他生成图片发群里，结果发了一条全员钉钉通知](https://github.com/soimy/openclaw-channel-dingtalk/issues/417)（状态：开启）（Stale）
+- [#522 [功能建议] AI Card支持@User响应](https://github.com/soimy/openclaw-channel-dingtalk/issues/522)（状态：开启）
 
 任务：
 - [ ] （拟完成，请评估）明确 @单人 需求范围
@@ -305,6 +306,7 @@
 - [ ] 跟进 `#305` 新增用户追问，补充当前版本可行配置与仍未覆盖场景的状态说明
 - [ ] 跟进 `#353` 最新追问（是否排期），补当前“仅 @sender 能力”与“@指定成员待规划”状态说明
 - [ ] 跟进 `#417` 的“触发全员工作通知”风险，补充 `@all` 防护说明与默认关闭/显式开启策略
+- [ ] 合并 `#522` 的 AI Card 群聊可追溯诉求：明确应走 `atUsers`、引用原消息，还是与 `#480` 的卡片引用回复方案组合交付
 - [x] 明确 card 模式下 `@sender` 通知能力边界，避免与“@指定成员”诉求混淆（#369）
   - [x] [#369 feat: add cardAtSender option to @mention sender after card finalization](https://github.com/soimy/openclaw-channel-dingtalk/pull/369)（状态：合并）
 
@@ -390,7 +392,7 @@
 - [ ] 跟进 `#416` 的“分步骤执行但钉钉端最终一次性可见”反馈，明确是通道节流策略、上游 buffering 还是客户端展示限制
 - [x] 回归 `#341` 引入的实时流式开关与默认值，验证“时延改善 vs API 成本”是否达到可接受平衡
   - [x] [#341 feat(dingtalk): real-time stream update for card mode](https://github.com/soimy/openclaw-channel-dingtalk/pull/341)（状态：合并）
-- [ ] 跟进 `#414` 的 markdown 模式“整段发送”反馈，明确是否为 `#361` 之后的预期行为并补文档说明
+- [ ] 跟进 `#414` 最新讨论：核对 `#447` 是否已恢复 markdown 增量时间线，排查后续 card 修复是否造成 markdown 回退，并补真机复现记录与文档说明
 - [x] 跟进 `#425` 乱序反馈，补“卡片模式/markdown 模式/客户端顺序渲染差异”对照复现记录
 
 ### 13. README / 截图 / onboarding / 配置说明补齐
@@ -400,8 +402,9 @@
 - [#434 macOS 安装失败](https://github.com/soimy/openclaw-channel-dingtalk/issues/434)（状态：开启）（Stale）
 - [#498 telegram-core 模块缺失安装反馈](https://github.com/soimy/openclaw-channel-dingtalk/issues/498)（状态：开启（v3.5.3 已发布；2026-04-09 补充剩余上游 qa-lab / install.runtime 噪音））
 - [#502 v3.5.2 兼容性问题：telegram-core 模块缺失](https://github.com/soimy/openclaw-channel-dingtalk/issues/502)（状态：已关闭（v3.5.3 已发布））
-- [#455 定时任务发送消息到指定群组](https://github.com/soimy/openclaw-channel-dingtalk/issues/455)（状态：开启）（Stale）
-- [#519 v3.5.3: Circular imports in src/ cause RangeError when loaded by openclaw CLI subcommands](https://github.com/soimy/openclaw-channel-dingtalk/issues/519)（状态：开启）
+- [#455 定时任务发送消息到指定群组](https://github.com/soimy/openclaw-channel-dingtalk/issues/455)（状态：开启）
+- [#519 v3.5.3: Circular imports in src/ cause RangeError when loaded by openclaw CLI subcommands](https://github.com/soimy/openclaw-channel-dingtalk/issues/519)（状态：已关闭（关联 PR #521））
+- [#520 [问题反馈] message send action 运行时报错 jsonResult is not a function (SDK 版本兼容性)](https://github.com/soimy/openclaw-channel-dingtalk/issues/520)（状态：开启（升级到 openclaw >= 2026.4.5 可规避））
 
 任务：
 - [ ] （拟完成，请评估）补 README 截图
@@ -422,7 +425,9 @@
 - [ ] 增补“主动消息发送”FAQ 与前置条件（`robotCode`、会话预热、机器人类型权限、流式模式差异）（#144/#355）
 - [ ] 增补“定时/主动发送到指定群”说明（`conversationId` 直发 + `displayNameResolution` 能力与版本门槛）（#376/#372）
 - [ ] 合并 `#455` 追问：补充 `cron/jobs.json` 中 `conversationId: group:cid...` 与 `session_key` 两种定向发送写法示例
-- [ ] 跟进 `#519` 的 CLI 子命令加载噪音：拆掉 `src/` 循环依赖，避免 `openclaw mcp set/list` 等子命令因插件初始化递归而刷 `RangeError`
+- [ ] （拟完成，请评估）跟进 `#519` 的 CLI 子命令加载噪音：循环依赖已拆除，待补一次发布后 CLI 子命令真实安装路径回归确认噪音已消失
+  - [x] [#521 fix: break 3 circular import cycles causing CLI RangeError](https://github.com/soimy/openclaw-channel-dingtalk/pull/521)（状态：合并）
+- [ ] 合并 `#520` 的 SDK 兼容结论：明确 `message send` 在 PR `#499` 之后依赖 `openclaw >= 2026.4.5`，补版本矩阵、升级提示与低版本保护策略
 - [ ] 增补“Markdown 表格渲染差异”说明（客户端差异 + 自定义机器人 vs 应用机器人）（#192/#358）
 - [ ] 补充 `gatewayToken` 缺失/错误时的配置排障指引与默认回退行为说明（#370）
 - [ ] （拟完成，请评估）跟进 `#402/#404/#405` 安装失败闭环：补版本兼容矩阵与升级指引，并同步已由 `#406` 修复的范围边界
