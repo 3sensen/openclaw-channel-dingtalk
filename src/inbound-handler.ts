@@ -1743,15 +1743,15 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
       console.log("[DingTalk] do firstTurn...");
 
-      const _reasoning: "on" | "stream" | "off" = dingtalkConfig?.accounts?.[accountId]?.reasoningValue || dingtalkConfig?.reasoningValue || "on";
-      const _thinking = dingtalkConfig?.accounts?.[accountId]?.thinkingValue || dingtalkConfig?.thinkingValue;
+      const _reasoning: "on" | "stream" | "off" = dingtalkConfig?.accounts?.[accountId]?.reasoning || dingtalkConfig?.reasoning || "on";
+      const _think = dingtalkConfig?.accounts?.[accountId]?.think || dingtalkConfig?.think;
 
       try {
         await ensureSessionDefault({
           storePath,
           sessionKey: route.sessionKey,
           reasoning: _reasoning,
-          thinking: _thinking,
+          thinking: _think,
           onlyWhenMissing: true,
           log,
         });

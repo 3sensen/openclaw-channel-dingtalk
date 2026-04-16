@@ -95,8 +95,8 @@ export interface DingTalkConfig extends OpenClawConfig {
 
   //----------- new feature ----------
   onFirstTurn?: boolean;
-  reasoningValue?: "on" | "stream" | "off";
-  thinkingValue?: "medium" | "off" | "low";
+  reasoning?: "on" | "stream" | "off";
+  think?: "medium" | "off" | "low";
 }
 
 /**
