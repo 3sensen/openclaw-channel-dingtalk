@@ -92,6 +92,11 @@ export interface DingTalkConfig extends OpenClawConfig {
   convertMarkdownTables?: boolean;
   /** @mention the sender after card finalization in group chats; value is the message text */
   cardAtSender?: string;
+
+  //----------- new feature ----------
+  onFirstTurn?: boolean;
+  reasoningValue?: "on" | "stream";
+  thinkingValue?: "medium" | "off" | "low";
 }
 
 /**

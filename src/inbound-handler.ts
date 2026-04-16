@@ -85,6 +85,7 @@ import {
 } from "./targeting/target-directory-store";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { formatDingTalkErrorPayloadLog, getErrorMessage, getErrorResponseData, maskSensitiveData } from "./utils";
+import { hasInjectedReasoningOn, markInjectedReasoningOn } from "./first-turn-store";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const MIN_THINKING_REACTION_VISIBLE_MS = 1200;
@@ -328,6 +329,86 @@ export async function downloadMedia(
   }
 }
 
+async function bootstrapTurnOnForNewSession(params: {
+  rt: ReturnType<typeof getDingTalkRuntime>;
+  cfg: HandleDingTalkMessageParams["cfg"];
+  ctx: Record<string, unknown>;
+  storePath: string;
+  accountId: string;
+  agentId: string;
+  sessionKey: string;
+  log?: {
+    debug?: (message: string) => void;
+    warn?: (message: string) => void;
+    info?: (message: string) => void;
+  };
+}, dingtalkConfig: DingTalkConfig): Promise<void> {
+  const { rt, cfg, ctx, storePath, accountId, agentId, sessionKey, log } = params;
+
+  if (
+    hasInjectedReasoningOn({
+      storePath,
+      accountId,
+      agentId,
+      sessionKey,
+    })
+  ) {
+    return;
+  }
+
+  const directiveBody: string[] = [];
+  directiveBody.push(`/reasoning ${dingtalkConfig.accounts?.[accountId]?.reasoningValue || dingtalkConfig.reasoningValue || "on"}`);
+  directiveBody.push(`/think:${dingtalkConfig.accounts?.[accountId]?.thinkingValue || dingtalkConfig.thinkingValue || "off"}`);
+
+  const body = directiveBody.join("\n");
+
+  const directiveCtx = {
+    ...ctx,
+    Body: body,
+    RawBody: body,
+    CommandBody: body,
+    // 这是插件内部合成 turn，不要夹带引用上下文
+    QuotedRef: undefined,
+    QuotedRefJson: undefined,
+    ReplyToId: undefined,
+    ReplyToBody: undefined,
+    ReplyToSender: undefined,
+    ReplyToIsQuote: undefined,
+    UntrustedContext: undefined,
+  };
+
+  try {
+    await rt.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: directiveCtx,
+      cfg,
+      dispatcherOptions: {
+        responsePrefix: "",
+        // 吞掉 directive-only ack，不回钉钉
+        deliver: async () => { },
+      },
+      replyOptions: {
+        disableBlockStreaming: true,
+      },
+    });
+
+    markInjectedReasoningOn({
+      storePath,
+      accountId,
+      agentId,
+      sessionKey,
+    });
+
+    log?.info?.(
+      `[DingTalk] First-turn bootstrap injected "/reasoning on" for session=${sessionKey}`,
+    );
+  } catch (err) {
+    log?.warn?.(
+      `[DingTalk] Failed to bootstrap "/reasoning on" for session=${sessionKey}: ${String(err)}`,
+    );
+    // 不抛出，避免阻断用户首条消息
+  }
+}
+
 export async function handleDingTalkMessage(params: HandleDingTalkMessageParams): Promise<void> {
   const { cfg, accountId, data, sessionWebhook, log, dingtalkConfig, subAgentOptions, preDownloadedMedia } = params;
   const rt = getDingTalkRuntime();
@@ -544,23 +625,23 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
   const route = subAgentOptions
     ? {
-        agentId: subAgentOptions.agentId,
-        sessionKey: buildAgentSessionKey({
-          rt,
-          cfg,
-          accountId,
-          agentId: subAgentOptions.agentId,
-          peerKind: sessionPeer.kind,
-          peerId: sessionPeer.peerId,
-        }),
-        mainSessionKey: "",
-      }
-    : rt.channel.routing.resolveAgentRoute({
+      agentId: subAgentOptions.agentId,
+      sessionKey: buildAgentSessionKey({
+        rt,
         cfg,
-        channel: "dingtalk",
         accountId,
-        peer: { kind: sessionPeer.kind, id: sessionPeer.peerId },
-      });
+        agentId: subAgentOptions.agentId,
+        peerKind: sessionPeer.kind,
+        peerId: sessionPeer.peerId,
+      }),
+      mainSessionKey: "",
+    }
+    : rt.channel.routing.resolveAgentRoute({
+      cfg,
+      channel: "dingtalk",
+      accountId,
+      peer: { kind: sessionPeer.kind, id: sessionPeer.peerId },
+    });
 
   // @Sub-Agent routing: resolve @mentions to agents (skip in recursive sub-agent calls)
   if (!subAgentOptions) {
@@ -910,9 +991,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         sessionWebhook,
         saved
           ? formatTargetSetSavedReply({
-              setName: parsedLearnCommand.setName,
-              targetIds: parsedLearnCommand.targetIds,
-            })
+            setName: parsedLearnCommand.setName,
+            targetIds: parsedLearnCommand.targetIds,
+          })
           : "目标组保存失败，请检查名称和目标列表。",
         { log },
       );
@@ -934,12 +1015,12 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         sessionWebhook,
         applied.length > 0
           ? formatLearnAppliedReply({
-              scope: "target-set",
-              setName: parsedLearnCommand.setName,
-              targetIds: applied.map((item) => item.targetId),
-              instruction: parsedLearnCommand.instruction,
-              ruleId: applied[0]?.ruleId,
-            })
+            scope: "target-set",
+            setName: parsedLearnCommand.setName,
+            targetIds: applied.map((item) => item.targetId),
+            instruction: parsedLearnCommand.instruction,
+            ruleId: applied[0]?.ruleId,
+          })
           : `未找到目标组 \`${parsedLearnCommand.setName}\`，或该目标组为空。`,
         { log },
       );
@@ -1057,14 +1138,14 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   if (hasLegacyQuoteContent && !quotedRef) {
     log?.debug?.(
       `[DingTalk] Legacy quoteContent present without resolvable quotedRef: ` +
-        `conversationType=${data.conversationType} conversationId=${data.conversationId} ` +
-        `msgId=${data.msgId} originalMsgId=${data.originalMsgId || "(none)"}`,
+      `conversationType=${data.conversationType} conversationId=${data.conversationId} ` +
+      `msgId=${data.msgId} originalMsgId=${data.originalMsgId || "(none)"}`,
     );
   }
   if (quotedRef) {
     log?.debug?.(
       `[DingTalk][QuotedRef] Built inbound quotedRef msgId=${data.msgId} scope=${groupId} ` +
-        `quotedRef=${JSON.stringify(quotedRef)}`,
+      `quotedRef=${JSON.stringify(quotedRef)}`,
     );
   } else if (
     data.text?.isReplyMsg ||
@@ -1074,8 +1155,8 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   ) {
     log?.debug?.(
       `[DingTalk][QuotedRef] Reply metadata present without resolvable quotedRef ` +
-        `msgId=${data.msgId} scope=${groupId} originalMsgId=${data.originalMsgId || "(none)"} ` +
-        `originalProcessQueryKey=${data.originalProcessQueryKey || "(none)"}`,
+      `msgId=${data.msgId} scope=${groupId} originalMsgId=${data.originalMsgId || "(none)"} ` +
+      `originalProcessQueryKey=${data.originalProcessQueryKey || "(none)"}`,
     );
   }
 
@@ -1195,12 +1276,12 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     firstRecord: quotedRecord,
     firstPreview:
       content.quoted?.previewText ||
-      content.quoted?.previewMessageType
+        content.quoted?.previewMessageType
         ? {
-            text: content.quoted.previewText,
-            messageType: content.quoted.previewMessageType,
-            senderId: content.quoted.previewSenderId,
-          }
+          text: content.quoted.previewText,
+          messageType: content.quoted.previewMessageType,
+          senderId: content.quoted.previewSenderId,
+        }
         : undefined,
     log,
   });
@@ -1225,7 +1306,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       if (media) {
         log?.debug?.(
           `[DingTalk][QuotedRef] Recovered quoted media from cached downloadCode ` +
-            `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
+          `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
         );
       }
     }
@@ -1242,7 +1323,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         if (media) {
           log?.debug?.(
             `[DingTalk][QuotedRef] Recovered quoted media from cached spaceId/fileId ` +
-              `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
+            `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
           );
         }
       } catch (err: any) {
@@ -1311,7 +1392,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         fileResolved = true;
         log?.debug?.(
           `[DingTalk][QuotedRef] Recovered quoted file from group file fallback ` +
-            `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
+          `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
         );
         if (content.quoted.msgId) {
           upsertInboundMessageContext({
@@ -1384,7 +1465,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         docResolved = true;
         log?.debug?.(
           `[DingTalk][QuotedRef] Recovered quoted doc card from group file fallback ` +
-            `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
+          `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
         );
         if (content.quoted.msgId) {
           upsertInboundMessageContext({
@@ -1468,13 +1549,13 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   // GroupSystemPrompt is injected every turn (not only first-turn intro).
   const groupSystemPromptParts = !isDirect
     ? [
-        buildGroupTurnContextPrompt({
-          conversationId: groupId,
-          senderDingtalkId: senderId,
-          senderName,
-        }),
-        groupConfig?.systemPrompt?.trim(),
-      ]
+      buildGroupTurnContextPrompt({
+        conversationId: groupId,
+        senderDingtalkId: senderId,
+        senderName,
+      }),
+      groupConfig?.systemPrompt?.trim(),
+    ]
     : [];
   const extraSystemPrompt =
     [...groupSystemPromptParts, learningContextBlock].filter(Boolean).join("\n\n") || undefined;
@@ -1496,10 +1577,24 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     envelope: envelopeOptions,
   });
 
+  const replyToBody = quotedRuntimeContext?.replyToBody?.trim();
+  const quotedReplyBlock = replyToBody
+    ? [
+      "[quoted_reply]",
+      replyToBody,
+      "[/quoted_reply]",
+    ]
+      .filter(Boolean)
+      .join("\n")
+    : "";
+  const commandBody = quotedReplyBlock
+    ? `${inboundText}\n\n${quotedReplyBlock}`
+    : inboundText;
+
   const ctx = rt.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: inboundText,
-    CommandBody: inboundText,
+    CommandBody: commandBody,
     QuotedRef: quotedRef,
     QuotedRefJson: quotedRef ? JSON.stringify(quotedRef) : undefined,
     ReplyToId: quotedRuntimeContext?.replyToId,
@@ -1569,10 +1664,10 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     typeof dingtalkConfig.ackReaction === "string"
       ? dingtalkConfig.ackReaction.trim()
       : resolveAckReactionSetting({
-          cfg,
-          accountId,
-          agentId: route.agentId,
-        });
+        cfg,
+        accountId,
+        agentId: route.agentId,
+      });
   const normalizedAckReaction = ackReaction === "off" ? "" : ackReaction;
   const resolvedAckReaction =
     normalizedAckReaction === "kaomoji"
@@ -1663,8 +1758,8 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     return Array.isArray(richPayload.mediaUrls)
       ? richPayload.mediaUrls.filter((entry: unknown) => typeof entry === "string" && entry.trim())
       : richPayload.mediaUrl &&
-          typeof richPayload.mediaUrl === "string" &&
-          richPayload.mediaUrl.trim()
+        typeof richPayload.mediaUrl === "string" &&
+        richPayload.mediaUrl.trim()
         ? [richPayload.mediaUrl]
         : [];
   }
@@ -1701,6 +1796,22 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   try {
     if (!ackReactionAttached && shouldAttachAckReaction) {
       log?.debug?.("[DingTalk] Native ack reaction unavailable; skipping fallback.");
+    }
+
+    const bootstrapTurn: boolean = dingtalkConfig.accounts?.[accountId]?.onFirstTurn ?? dingtalkConfig.onFirstTurn ?? false;
+
+    if (bootstrapTurn) {
+      // 先做一次“隐藏 directive-only turn”，让 session 持久化 reasoning=on
+      await bootstrapTurnOnForNewSession({
+        rt,
+        cfg,
+        ctx,
+        storePath,
+        accountId,
+        agentId: route.agentId,
+        sessionKey: route.sessionKey,
+        log,
+      }, dingtalkConfig);
     }
 
     // ---- Create reply strategy (card or markdown) ----
