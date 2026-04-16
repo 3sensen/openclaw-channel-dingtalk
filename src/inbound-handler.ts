@@ -85,7 +85,7 @@ import {
 } from "./targeting/target-directory-store";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { formatDingTalkErrorPayloadLog, getErrorMessage, getErrorResponseData, maskSensitiveData } from "./utils";
-import { hasInjectedReasoningOn, markInjectedReasoningOn } from "./first-turn-store";
+import { hasInjectedFirstTurnOn, markInjectedReasoningOn as markInjectedFirstTurnOn } from "./first-turn-store";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const MIN_THINKING_REACTION_VISIBLE_MS = 1200;
@@ -345,16 +345,19 @@ async function bootstrapTurnOnForNewSession(params: {
 }, dingtalkConfig: DingTalkConfig): Promise<void> {
   const { rt, cfg, ctx, storePath, accountId, agentId, sessionKey, log } = params;
 
+  /*
   if (
-    hasInjectedReasoningOn({
+    hasInjectedFirstTurnOn({
       storePath,
       accountId,
       agentId,
       sessionKey,
     })
   ) {
+    console.log("bootstrapTurnOn has ran");
     return;
   }
+  */
 
   const directiveBody: string[] = [];
   directiveBody.push(`/reasoning ${dingtalkConfig.accounts?.[accountId]?.reasoningValue || dingtalkConfig.reasoningValue || "on"}`);
@@ -391,7 +394,7 @@ async function bootstrapTurnOnForNewSession(params: {
       },
     });
 
-    markInjectedReasoningOn({
+    markInjectedFirstTurnOn({
       storePath,
       accountId,
       agentId,
@@ -399,11 +402,11 @@ async function bootstrapTurnOnForNewSession(params: {
     });
 
     log?.info?.(
-      `[DingTalk] First-turn bootstrap injected "/reasoning on" for session=${sessionKey}`,
+      `[DingTalk] First-turn bootstrap injected "${body}" for session=${sessionKey}`,
     );
   } catch (err) {
     log?.warn?.(
-      `[DingTalk] Failed to bootstrap "/reasoning on" for session=${sessionKey}: ${String(err)}`,
+      `[DingTalk] Failed to bootstrap "${body}" for session=${sessionKey}: ${String(err)}`,
     );
     // 不抛出，避免阻断用户首条消息
   }

@@ -37,7 +37,7 @@ function writeBucket(
   });
 }
 
-export function hasInjectedReasoningOn(params: {
+export function hasInjectedFirstTurnOn(params: {
   storePath: string;
   accountId: string;
   agentId: string;
