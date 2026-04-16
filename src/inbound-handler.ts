@@ -85,7 +85,7 @@ import {
 } from "./targeting/target-directory-store";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { formatDingTalkErrorPayloadLog, getErrorMessage, getErrorResponseData, maskSensitiveData } from "./utils";
-import { hasInjectedFirstTurnOn, markInjectedFirstTurnOn } from "./first-turn-store";
+import { ensureSessionDefault } from "./session-defaults"
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const MIN_THINKING_REACTION_VISIBLE_MS = 1200;
@@ -326,89 +326,6 @@ export async function downloadMedia(
       }
     }
     return null;
-  }
-}
-
-async function bootstrapTurnOnForNewSession(params: {
-  rt: ReturnType<typeof getDingTalkRuntime>;
-  cfg: HandleDingTalkMessageParams["cfg"];
-  ctx: Record<string, unknown>;
-  storePath: string;
-  accountId: string;
-  agentId: string;
-  sessionKey: string;
-  log?: {
-    debug?: (message: string) => void;
-    warn?: (message: string) => void;
-    info?: (message: string) => void;
-  };
-}, dingtalkConfig: DingTalkConfig): Promise<void> {
-  const { rt, cfg, ctx, storePath, accountId, agentId, sessionKey, log } = params;
-
-  /*
-  if (
-    hasInjectedFirstTurnOn({
-      storePath,
-      accountId,
-      agentId,
-      sessionKey,
-    })
-  ) {
-    console.log("bootstrapTurnOn has ran");
-    return;
-  }
-  */
-
-  const directiveBody: string[] = [];
-  directiveBody.push(`/reasoning ${dingtalkConfig.accounts?.[accountId]?.reasoningValue || dingtalkConfig.reasoningValue || "on"}`);
-  directiveBody.push(`/think:${dingtalkConfig.accounts?.[accountId]?.thinkingValue || dingtalkConfig.thinkingValue || "off"}`);
-
-  const body = directiveBody.join("\n");
-
-  const directiveCtx = {
-    ...ctx,
-    Body: body,
-    RawBody: body,
-    CommandBody: body,
-    // 这是插件内部合成 turn，不要夹带引用上下文
-    QuotedRef: undefined,
-    QuotedRefJson: undefined,
-    ReplyToId: undefined,
-    ReplyToBody: undefined,
-    ReplyToSender: undefined,
-    ReplyToIsQuote: undefined,
-    UntrustedContext: undefined,
-  };
-
-  try {
-    await rt.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-      ctx: directiveCtx,
-      cfg,
-      dispatcherOptions: {
-        responsePrefix: "",
-        // 吞掉 directive-only ack，不回钉钉
-        deliver: async () => { console.log("bootstrapTurnOn is ok") },
-      },
-      replyOptions: {
-        disableBlockStreaming: true,
-      },
-    });
-
-    markInjectedFirstTurnOn({
-      storePath,
-      accountId,
-      agentId,
-      sessionKey,
-    });
-
-    log?.info?.(
-      `[DingTalk] First-turn bootstrap injected "${body}" for session=${sessionKey}`,
-    );
-  } catch (err) {
-    log?.warn?.(
-      `[DingTalk] Failed to bootstrap "${body}" for session=${sessionKey}: ${String(err)}`,
-    );
-    // 不抛出，避免阻断用户首条消息
   }
 }
 
@@ -1801,24 +1718,6 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       log?.debug?.("[DingTalk] Native ack reaction unavailable; skipping fallback.");
     }
 
-    const bootstrapTurn: boolean = dingtalkConfig.accounts?.[accountId]?.onFirstTurn ?? dingtalkConfig.onFirstTurn ?? false;
-
-    console.log(`[DingTalk] bootstrapTurn=${bootstrapTurn}`);
-
-    if (bootstrapTurn) {
-      // 先做一次“隐藏 directive-only turn”，让 session 持久化 reasoning=on
-      await bootstrapTurnOnForNewSession({
-        rt,
-        cfg,
-        ctx,
-        storePath,
-        accountId,
-        agentId: route.agentId,
-        sessionKey: route.sessionKey,
-        log,
-      }, dingtalkConfig);
-    }
-
     // ---- Create reply strategy (card or markdown) ----
     const strategy = createReplyStrategy({
       config: dingtalkConfig,
@@ -1835,6 +1734,35 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       replyQuotedRef,
       deliverMedia: deliverMediaAttachments,
     });
+
+    const isNewSession = previousTimestamp == null;
+
+    const firstTurn = dingtalkConfig?.accounts?.[accountId]?.onFirstTurn || dingtalkConfig?.onFirstTurn || false;
+
+    if (firstTurn && isNewSession) {
+
+      console.log("[DingTalk] do firstTurn...");
+
+      const _reasoning: "on" | "stream" | "off" = dingtalkConfig?.accounts?.[accountId]?.reasoningValue || dingtalkConfig?.reasoningValue || "on";
+      const _thinking = dingtalkConfig?.accounts?.[accountId]?.thinkingValue || dingtalkConfig?.thinkingValue;
+
+      try {
+        await ensureSessionDefault({
+          storePath,
+          sessionKey: route.sessionKey,
+          reasoning: _reasoning,
+          thinking: _thinking,
+          onlyWhenMissing: true,
+          log,
+        });
+      } catch (err: unknown) {
+        log?.warn?.(
+          `[DingTalk] failed to initialize reasoning default for ${route.sessionKey}: ${err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
 
     try {
       await rt.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
