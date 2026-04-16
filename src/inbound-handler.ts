@@ -85,7 +85,7 @@ import {
 } from "./targeting/target-directory-store";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { formatDingTalkErrorPayloadLog, getErrorMessage, getErrorResponseData, maskSensitiveData } from "./utils";
-import { hasInjectedFirstTurnOn, markInjectedReasoningOn as markInjectedFirstTurnOn } from "./first-turn-store";
+import { hasInjectedFirstTurnOn, markInjectedFirstTurnOn } from "./first-turn-store";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
 const MIN_THINKING_REACTION_VISIBLE_MS = 1200;
@@ -387,7 +387,7 @@ async function bootstrapTurnOnForNewSession(params: {
       dispatcherOptions: {
         responsePrefix: "",
         // 吞掉 directive-only ack，不回钉钉
-        deliver: async () => { },
+        deliver: async () => { console.log("bootstrapTurnOn is ok") },
       },
       replyOptions: {
         disableBlockStreaming: true,

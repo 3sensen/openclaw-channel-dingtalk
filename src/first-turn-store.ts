@@ -48,7 +48,7 @@ export function hasInjectedFirstTurnOn(params: {
   return bucket.sessions[key]?.enabled === true;
 }
 
-export function markInjectedReasoningOn(params: {
+export function markInjectedFirstTurnOn(params: {
   storePath: string;
   accountId: string;
   agentId: string;
