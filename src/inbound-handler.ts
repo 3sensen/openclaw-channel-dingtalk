@@ -1800,7 +1800,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
     const bootstrapTurn: boolean = dingtalkConfig.accounts?.[accountId]?.onFirstTurn ?? dingtalkConfig.onFirstTurn ?? false;
 
-    log?.info?.(`[DingTalk] bootstrapTurn=${bootstrapTurn}`);
+    console.log(`[DingTalk] bootstrapTurn=${bootstrapTurn}`);
 
     if (bootstrapTurn) {
       // 先做一次“隐藏 directive-only turn”，让 session 持久化 reasoning=on
