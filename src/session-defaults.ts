@@ -33,7 +33,7 @@ async function acquireFileLock(lockDir: string): Promise<() => Promise<void>> {
     try {
       await fs.mkdir(lockDir);
       return async () => {
-        await fs.rm(lockDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(lockDir, { recursive: true, force: true }).catch(() => { });
       };
     } catch (err: any) {
       if (err?.code !== "EEXIST") {
@@ -99,27 +99,47 @@ export async function ensureSessionDefault(params: EnsureParams): Promise<boolea
       return false;
     }
 
-    const current = entry.reasoningLevel;
-    if (onlyWhenMissing && current != null && current !== "") {
-      log?.debug?.(
-        `[DingTalk] reasoningLevel already exists, skip. sessionKey=${sessionKey} current=${String(current)}`,
+    const chg = setSessionDefault(sessionKey, entry, [
+      { onlyWhenMissing, attr: "reasoningLevel", val: reasoning },
+      { onlyWhenMissing, attr: "thinkingLevel", val: thinking }
+    ]);
+
+    if (chg) {
+      store[sessionKey] = {
+        ...entry
+      };
+      await writeJsonAtomic(storePath, store);
+      log?.info?.(
+        `[DingTalk] initialized /reasoning ${reasoning}, /think:${thinking} for session ${sessionKey}`,
       );
-      return false;
     }
 
-    store[sessionKey] = {
-      ...entry,
-      reasoningLevel: reasoning,
-      thinkingLevel: thinking
-    };
-
-    await writeJsonAtomic(storePath, store);
-
-    log?.info?.(
-      `[DingTalk] initialized /reasoning ${reasoning}, /think:${thinking} for session ${sessionKey}`,
-    );
     return true;
   } finally {
     await release();
   }
+}
+
+function setSessionDefault(sessionKey: string, session: SessionEntry, defaults: { 
+  onlyWhenMissing: boolean, 
+  attr: "reasoningLevel" | "thinkingLevel", 
+  val: any 
+}[], log?: LoggerLike): boolean {
+  let ret: boolean = false;
+
+  for (const def of defaults) {
+    const current = session[def.attr];
+
+    if (def.onlyWhenMissing && current != null && current !== "") {
+      log?.info?.(
+        `[DingTalk] ${def.attr} already exists, skip. sessionKey=${sessionKey} current=${String(current)}`,
+      );
+      continue;
+    }
+    session[def.attr] = def.val;
+    log?.info?.(`[DingTalk] set ${def.attr} = ${def.val} to session[${sessionKey}]`);
+    ret = true;
+  }
+
+  return ret;
 }
