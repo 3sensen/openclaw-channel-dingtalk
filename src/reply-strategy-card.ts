@@ -39,10 +39,10 @@ export function createCardReplyStrategy(
 
         onPartialReply: config.cardRealTimeStream
           ? (payload) => {
-              if (payload.text) {
-                controller.updateAnswer(payload.text);
-              }
+            if (payload.text) {
+              controller.updateAnswer(payload.text);
             }
+          }
           : undefined,
 
         onReasoningStream: (payload) => {

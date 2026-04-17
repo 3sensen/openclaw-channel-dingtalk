@@ -62,9 +62,9 @@ function touchInMemoryCardContentBucket(scopeKey: string, nowMs: number): {
   const existing = inMemoryCardContentStore.get(scopeKey);
   const bucket = existing
     ? {
-        entries: pruneInMemoryCardContentEntries(existing.entries, nowMs),
-        lastActiveAt: nowMs,
-      }
+      entries: pruneInMemoryCardContentEntries(existing.entries, nowMs),
+      lastActiveAt: nowMs,
+    }
     : { entries: [], lastActiveAt: nowMs };
   inMemoryCardContentStore.set(scopeKey, bucket);
   if (inMemoryCardContentStore.size > CARD_CACHE_MAX_CONVERSATIONS) {
@@ -596,23 +596,23 @@ export async function createAICard(
       userIdType: 1,
       imGroupOpenDeliverModel: isGroup
         ? {
-            robotCode: config.robotCode || config.clientId,
-            extension: DYNAMIC_SUMMARY_EXTENSION,
-          }
+          robotCode: config.robotCode || config.clientId,
+          extension: DYNAMIC_SUMMARY_EXTENSION,
+        }
         : undefined,
       imRobotOpenDeliverModel: !isGroup
         ? {
-            spaceType: "IM_ROBOT",
-            robotCode: config.robotCode || config.clientId,
-            extension: DYNAMIC_SUMMARY_EXTENSION,
-          }
+          spaceType: "IM_ROBOT",
+          robotCode: config.robotCode || config.clientId,
+          extension: DYNAMIC_SUMMARY_EXTENSION,
+        }
         : undefined,
     };
 
     if (isGroup && !config.robotCode) {
       log?.warn?.(
         "[DingTalk][AICard] robotCode not configured, using clientId as fallback. " +
-          "For best compatibility, set robotCode explicitly in config.",
+        "For best compatibility, set robotCode explicitly in config.",
       );
     }
 
@@ -632,16 +632,16 @@ export async function createAICard(
     );
     const responseData = resp.data as
       | {
-          result?: DingTalkTrackingMetadata;
-          processQueryKey?: unknown;
-          outTrackId?: unknown;
-          cardInstanceId?: unknown;
-        }
+        result?: DingTalkTrackingMetadata;
+        processQueryKey?: unknown;
+        outTrackId?: unknown;
+        cardInstanceId?: unknown;
+      }
       | undefined;
     const responseTracking = responseData?.result;
     const processQueryKey =
       typeof responseTracking?.processQueryKey === "string" &&
-      responseTracking.processQueryKey.trim()
+        responseTracking.processQueryKey.trim()
         ? responseTracking.processQueryKey.trim()
         : typeof responseData?.processQueryKey === "string" && responseData.processQueryKey.trim()
           ? responseData.processQueryKey.trim()
@@ -716,6 +716,11 @@ export async function streamAICard(
     return;
   }
 
+  if (finished) {
+    console.error("[Dingtalk debug] card stream final,  stack=", new Error());
+  }
+
+
   // Refresh token defensively before DingTalk 2h token horizon.
   const tokenAge = Date.now() - card.createdAt;
   const tokenRefreshThreshold = 90 * 60 * 1000;
@@ -781,7 +786,7 @@ export async function streamAICard(
 
       log?.error?.(
         `[DingTalk][AICard] Streaming failed with 500 unknownError. Key: ${usedKey}, Template: ${cardTemplateId}. ` +
-          `Verify that "cardTemplateKey" matches the content field variable name in your card template.`,
+        `Verify that "cardTemplateKey" matches the content field variable name in your card template.`,
       );
 
       card.state = AICardStatus.FAILED;
