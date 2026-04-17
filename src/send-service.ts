@@ -95,8 +95,9 @@ function persistFinalCardMessageContext(params: {
   });
 
   const finalText = pending?.fullText || params.text;
+  
 
-  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> \tpending.fullText = ${pending?.fullText?.slice(0, 100)},\tfinal.text = ${params.text?.slice(0, 100)}`)
+  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> \tpending.fullText[${pending?.fullText?.length}] = ${pending?.fullText?.slice(0, 100)},\tfinal.text[${params.text?.length}] = ${params.text?.slice(0, 100)}`)
 
   const finalMessageId = pending?.messageId ?? params.messageId;
   const finalProcessQueryKey = pending?.processQueryKey ?? params.processQueryKey;

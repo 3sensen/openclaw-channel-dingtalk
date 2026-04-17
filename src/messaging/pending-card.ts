@@ -64,7 +64,7 @@ export function upsertPendingCardContext(params: {
     cardInstanceId: params.cardInstanceId ?? prev?.cardInstanceId,
   });
 
-  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> pending.text = ${params.fullText.slice(0, 100)}...`);
+  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> pending.text[${params.fullText?.length}] = ${params.fullText.slice(0, 100)}...`);
 
   return key;
 }
