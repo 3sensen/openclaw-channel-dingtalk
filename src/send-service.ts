@@ -31,6 +31,8 @@ import type {
 } from "./types";
 import { AICardStatus } from "./types";
 
+import { deletePendingCardContext, getPendingCardContext, upsertPendingCardContext } from "./messaging/pending-card";
+
 export { detectMediaTypeFromExtension } from "./media-utils";
 
 type ProactiveTextSendResult = AxiosResponse | { tracking: DingTalkTrackingMetadata };
@@ -69,10 +71,75 @@ function extractOutboundDeliveryMetadata(payload: unknown): {
   return { messageId, processQueryKey, outTrackId, cardInstanceId };
 }
 
+
+function persistFinalCardMessageContext(params: {
+  storePath?: string;
+  accountId?: string;
+  conversationId: string;
+  text: string;
+  quotedRef?: QuotedRef;
+  createdAt?: number;
+  log?: Logger;
+  messageId?: string;
+  processQueryKey?: string;
+  outTrackId?: string;
+  cardInstanceId?: string;
+  kind?: "session" | "proactive-card";
+}): void {
+  const pending = getPendingCardContext({
+    conversationId: params.conversationId,
+    messageId: params.messageId,
+    processQueryKey: params.processQueryKey,
+    outTrackId: params.outTrackId,
+    cardInstanceId: params.cardInstanceId,
+  });
+
+  const finalText = pending?.fullText || params.text;
+
+  console.log(`card stream final. -> \npending.fullText = ${pending?.fullText?.slice(0,100)},\nfinal.text = ${params.text?.slice(0,100)}`)
+
+  const finalMessageId = pending?.messageId ?? params.messageId;
+  const finalProcessQueryKey = pending?.processQueryKey ?? params.processQueryKey;
+  const finalOutTrackId = pending?.outTrackId ?? params.outTrackId;
+  const finalCardInstanceId = pending?.cardInstanceId ?? params.cardInstanceId;
+
+  persistOutboundMessageContext({
+    storePath: params.storePath,
+    accountId: pending?.accountId ?? params.accountId,
+    conversationId: params.conversationId,
+    msgId:
+      finalMessageId ||
+      finalProcessQueryKey ||
+      finalOutTrackId ||
+      finalCardInstanceId,
+    text: finalText,
+    messageType: "outbound-card-final",
+    createdAt: pending?.createdAt ?? params.createdAt,
+    quotedRef: pending?.quotedRef ?? params.quotedRef,
+    log: params.log,
+    delivery: {
+      messageId: finalMessageId,
+      processQueryKey: finalProcessQueryKey,
+      outTrackId: finalOutTrackId,
+      cardInstanceId: finalCardInstanceId,
+      kind: params.kind ?? "proactive-card",
+    },
+  });
+
+  deletePendingCardContext({
+    conversationId: params.conversationId,
+    messageId: finalMessageId,
+    processQueryKey: finalProcessQueryKey,
+    outTrackId: finalOutTrackId,
+    cardInstanceId: finalCardInstanceId,
+  });
+}
+
 function persistOutboundMessageContext(params: {
   storePath?: string;
   accountId?: string;
   conversationId: string;
+  msgId?: string;
   text?: string;
   messageType?: string;
   createdAt?: number;
@@ -98,6 +165,7 @@ function persistOutboundMessageContext(params: {
     storePath: params.storePath,
     accountId: params.accountId,
     conversationId: params.conversationId,
+    msgId: params.msgId,
     createdAt: params.createdAt ?? Date.now(),
     text: params.text,
     messageType: params.messageType,
@@ -245,6 +313,18 @@ export async function sendProactiveTextOrMarkdown(
       if (options.accountId) {
         deleteProactiveRiskObservation(options.accountId, resolvedTarget);
       }
+
+      upsertPendingCardContext({
+        accountId: options.accountId,
+        conversationId: options.conversationId || resolvedTarget,
+        quotedRef: options.quotedRef,
+        createdAt: Date.now(),
+        fullText: text,
+        processQueryKey: result.processQueryKey,
+        outTrackId: result.outTrackId,
+        cardInstanceId: result.cardInstanceId,
+      });
+
       return {
         tracking: {
           processQueryKey: result.processQueryKey,
@@ -320,8 +400,7 @@ export async function sendProactiveTextOrMarkdown(
       const statusText = maybeAxiosError.response.statusText;
       const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
       log?.error?.(
-        `[DingTalk] Failed to send proactive message:${statusLabel} message=${
-          maybeAxiosError.message || String(err)
+        `[DingTalk] Failed to send proactive message:${statusLabel} message=${maybeAxiosError.message || String(err)
         }${proactiveRiskTag}`,
       );
       if (maybeAxiosError.response.data !== undefined) {
@@ -423,6 +502,7 @@ export async function sendProactiveMedia(
       storePath: options.storePath,
       accountId: options.accountId,
       conversationId: options.conversationId || resolvedTarget,
+      msgId: messageId,
       text: `[media:${mediaType}] ${mediaPath}`,
       messageType: "outbound-proactive-media",
       quotedRef: options.quotedRef,
@@ -481,6 +561,7 @@ export async function sendProactiveMedia(
       storePath: options.storePath,
       accountId: options.accountId,
       conversationId: options.conversationId || normalizedTarget,
+      msgId: fallbackMessageId,
       text: fallbackPersistedText,
       messageType: "outbound-proactive-fallback",
       quotedRef: options.quotedRef,
@@ -591,8 +672,26 @@ export async function sendMessage(
       const card = options.card;
       if (isCardInTerminalState(card.state)) {
         if (options.sessionWebhook) {
-          await sendBySession(config, options.sessionWebhook, text, options);
-          return { ok: true };
+          const data = await sendBySession(config, options.sessionWebhook, text, options);
+          const delivery = extractOutboundDeliveryMetadata(data);
+
+          persistFinalCardMessageContext({
+            storePath: options.storePath,
+            accountId: options.accountId,
+            conversationId: options.conversationId || conversationId,
+            text,
+            quotedRef: options.quotedRef,
+            createdAt: Date.now(),
+            log,
+            messageId: delivery.messageId,
+            processQueryKey: delivery.processQueryKey,
+            outTrackId: delivery.outTrackId,
+            cardInstanceId: delivery.cardInstanceId,
+            kind: "session",
+          });
+
+          const messageId = delivery.messageId || delivery.processQueryKey || delivery.outTrackId;
+          return { ok: true, data, messageId };
         }
 
         if (config.cardTemplateId) {
@@ -600,6 +699,21 @@ export async function sendMessage(
           if (!proactiveResult.ok) {
             return { ok: false, error: proactiveResult.error || "Card send failed" };
           }
+
+          persistFinalCardMessageContext({
+            storePath: options.storePath,
+            accountId: options.accountId,
+            conversationId: options.conversationId || conversationId,
+            text,
+            quotedRef: options.quotedRef,
+            createdAt: Date.now(),
+            log,
+            processQueryKey: proactiveResult.processQueryKey,
+            outTrackId: proactiveResult.outTrackId,
+            cardInstanceId: proactiveResult.cardInstanceId,
+            kind: "proactive-card",
+          });
+
           return {
             ok: true,
             tracking: {
@@ -613,7 +727,28 @@ export async function sendMessage(
         try {
           const nextContent = composeCardContentForAppend(card.lastStreamedContent, text);
           await streamAICard(card, nextContent, false, log);
-          return { ok: true };
+
+          upsertPendingCardContext({
+            accountId: options.accountId,
+            conversationId: options.conversationId || conversationId,
+            quotedRef: options.quotedRef,
+            createdAt: card.createdAt,
+            fullText: nextContent,
+            messageId: (card as any).messageId,
+            processQueryKey: card.processQueryKey,
+            outTrackId: card.outTrackId,
+            cardInstanceId: card.cardInstanceId,
+          });
+
+          card.lastStreamedContent = nextContent;
+          return {
+            ok: true,
+            tracking: {
+              processQueryKey: card.processQueryKey,
+              outTrackId: card.outTrackId,
+              cardInstanceId: card.cardInstanceId,
+            },
+          };
         } catch (err: any) {
           log?.warn?.(`[DingTalk] AI Card streaming failed: ${err.message}`);
           card.state = AICardStatus.FAILED;
@@ -632,6 +767,7 @@ export async function sendMessage(
         storePath: options.storePath,
         accountId: options.accountId,
         conversationId: options.conversationId || conversationId,
+        msgId: messageId,
         text: persistedText,
         messageType: options.mediaPath && options.mediaType ? "outbound-media" : "outbound",
         quotedRef: options.quotedRef,
@@ -651,6 +787,7 @@ export async function sendMessage(
       storePath: options.storePath,
       accountId: options.accountId,
       conversationId: options.conversationId || conversationId,
+      msgId: messageId,
       text,
       messageType: "outbound-proactive",
       quotedRef: options.quotedRef,

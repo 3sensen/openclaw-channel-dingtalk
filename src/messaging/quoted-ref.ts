@@ -47,6 +47,16 @@ export function buildInboundQuotedRef(
         fallbackCreatedAt,
       };
     }
+
+    if (repliedMsgId) {
+      return {
+        targetDirection: "outbound",
+        key: "messageId",
+        value: repliedMsgId,
+        fallbackCreatedAt,
+      };
+    }
+
     if (!fallbackCreatedAt) {
       return undefined;
     }
