@@ -85,7 +85,7 @@ function persistFinalCardMessageContext(params: {
   outTrackId?: string;
   cardInstanceId?: string;
   kind?: "session" | "proactive-card";
-}): void {
+}, cardState: string): void {
   const pending = getPendingCardContext({
     conversationId: params.conversationId,
     messageId: params.messageId,
@@ -96,7 +96,7 @@ function persistFinalCardMessageContext(params: {
 
   const finalText = pending?.fullText || params.text;
 
-  console.log(`card stream final. -> \npending.fullText = ${pending?.fullText?.slice(0,100)},\nfinal.text = ${params.text?.slice(0,100)}`)
+  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> \tpending.fullText = ${pending?.fullText?.slice(0, 100)},\tfinal.text = ${params.text?.slice(0, 100)}`)
 
   const finalMessageId = pending?.messageId ?? params.messageId;
   const finalProcessQueryKey = pending?.processQueryKey ?? params.processQueryKey;
@@ -323,7 +323,7 @@ export async function sendProactiveTextOrMarkdown(
         processQueryKey: result.processQueryKey,
         outTrackId: result.outTrackId,
         cardInstanceId: result.cardInstanceId,
-      });
+      }, "INIT");
 
       return {
         tracking: {
@@ -688,7 +688,7 @@ export async function sendMessage(
             outTrackId: delivery.outTrackId,
             cardInstanceId: delivery.cardInstanceId,
             kind: "session",
-          });
+          }, card.state);
 
           const messageId = delivery.messageId || delivery.processQueryKey || delivery.outTrackId;
           return { ok: true, data, messageId };
@@ -712,7 +712,7 @@ export async function sendMessage(
             outTrackId: proactiveResult.outTrackId,
             cardInstanceId: proactiveResult.cardInstanceId,
             kind: "proactive-card",
-          });
+          }, card.state);
 
           return {
             ok: true,
@@ -738,7 +738,7 @@ export async function sendMessage(
             processQueryKey: card.processQueryKey,
             outTrackId: card.outTrackId,
             cardInstanceId: card.cardInstanceId,
-          });
+          }, card.state);
 
           card.lastStreamedContent = nextContent;
           return {

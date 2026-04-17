@@ -41,7 +41,7 @@ export function upsertPendingCardContext(params: {
   processQueryKey?: string;
   outTrackId?: string;
   cardInstanceId?: string;
-}): string {
+}, cardState: string): string {
   const key = buildPendingCardKey({
     conversationId: params.conversationId,
     messageId: params.messageId,
@@ -64,7 +64,7 @@ export function upsertPendingCardContext(params: {
     cardInstanceId: params.cardInstanceId ?? prev?.cardInstanceId,
   });
 
-  console.log(`card stream -> pending.text = ${params.fullText.slice(0, 100)}...`);
+  console.log(`[DingTalk] card stream[${cardState ?? ""}] -> pending.text = ${params.fullText.slice(0, 100)}...`);
 
   return key;
 }
