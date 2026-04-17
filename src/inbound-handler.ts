@@ -1194,6 +1194,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     conversationId: data.conversationId,
     quotedRef,
     firstRecord: quotedRecord,
+    perHopBodyLimit: 20480,
     firstPreview:
       content.quoted?.previewText ||
         content.quoted?.previewMessageType
@@ -1498,9 +1499,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   });
 
 
-  console.log("quoted", JSON.stringify(quotedRuntimeContext?.chain));
-
-  const replyToBody = quotedRuntimeContext?.replyToBody?.trim();
+  const replyToBody = quotedRuntimeContext?.chain?.[0]?.body ?? quotedRuntimeContext?.replyToBody?.trim();
   const quotedReplyBlock = replyToBody
     ? [
       "[quoted_reply]",
