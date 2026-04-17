@@ -1497,6 +1497,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     envelope: envelopeOptions,
   });
 
+
+  console.log("quoted", JSON.stringify(quotedRuntimeContext?.chain));
+
   const replyToBody = quotedRuntimeContext?.replyToBody?.trim();
   const quotedReplyBlock = replyToBody
     ? [

@@ -864,8 +864,6 @@ export async function finishAICard(
   log?.debug?.(`[DingTalk][AICard] Starting finish, final content length=${content.length}`);
   await streamAICard(card, content, true, log);
 
-  console.log("[DingTalk debug] card finish", card.conversationId, card.accountId, card.processQueryKey);
-
   if (card.conversationId && content.trim() && card.accountId && card.processQueryKey) {
     const primaryConversationId = card.contextConversationId || card.conversationId;
     cacheCardContentByProcessQueryKey(
