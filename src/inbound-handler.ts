@@ -1181,6 +1181,10 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     }
   }
 
+  if(quotedRef){
+    console.log("quotedRef from ", accountStorePath);
+  }
+
   const quotedRecord = resolveQuotedRecord({
     storePath: accountStorePath,
     accountId,
@@ -1195,6 +1199,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     quotedRef,
     firstRecord: quotedRecord,
     perHopBodyLimit: 20480,
+    totalBodyLimit: 20480 * 10,
     firstPreview:
       content.quoted?.previewText ||
         content.quoted?.previewMessageType

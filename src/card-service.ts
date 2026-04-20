@@ -861,7 +861,7 @@ export async function finishAICard(
 
   if (card.conversationId && content.trim() && card.accountId && card.processQueryKey) {
 
-    console.error(`[Dingtalk debug] card final to store = ${card.storePath}, processQueryKey = ${card.processQueryKey}, content = ${content},  stack=`, new Error());
+    console.error(`[Dingtalk debug] card final to store = ${card.storePath}, processQueryKey = ${card.processQueryKey}, content[${content.length}] = ${content.slice(0,30)}...,  stack=`, new Error());
 
     const primaryConversationId = card.contextConversationId || card.conversationId;
     cacheCardContentByProcessQueryKey(
