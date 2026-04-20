@@ -1873,6 +1873,15 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       isStopRequested: isCurrentCardStopRequested,
     });
 
+    // new session
+    if (previousTimestamp == null) {
+      await initSessionDefault(accountId, dingtalkConfig, {
+        storePath: storePath,
+        sessionKey: route.sessionKey,
+        log: log
+      });
+    }
+
     try {
       await rt.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx,
