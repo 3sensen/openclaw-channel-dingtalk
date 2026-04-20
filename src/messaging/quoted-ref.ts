@@ -51,7 +51,7 @@ export function buildInboundQuotedRef(
     if (repliedMsgId) {
       return {
         targetDirection: "outbound",
-        key: "messageId",
+        key: "msgId",
         value: repliedMsgId,
         fallbackCreatedAt,
       };

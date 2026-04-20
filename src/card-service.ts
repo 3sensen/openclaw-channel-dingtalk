@@ -716,11 +716,6 @@ export async function streamAICard(
     return;
   }
 
-  if (finished) {
-    console.error("[Dingtalk debug] card stream final,  stack=", new Error());
-  }
-
-
   // Refresh token defensively before DingTalk 2h token horizon.
   const tokenAge = Date.now() - card.createdAt;
   const tokenRefreshThreshold = 90 * 60 * 1000;
@@ -865,6 +860,9 @@ export async function finishAICard(
   await streamAICard(card, content, true, log);
 
   if (card.conversationId && content.trim() && card.accountId && card.processQueryKey) {
+
+    console.error(`[Dingtalk debug] card final to store = ${card.storePath}, processQueryKey = ${card.processQueryKey}, content = ${content},  stack=`, new Error());
+
     const primaryConversationId = card.contextConversationId || card.conversationId;
     cacheCardContentByProcessQueryKey(
       card.accountId,
