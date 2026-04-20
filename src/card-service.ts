@@ -892,6 +892,9 @@ export async function finishAICard(
   }
   if (card.conversationId && content.trim() && card.accountId && card.processQueryKey) {
     const primaryConversationId = card.contextConversationId || card.conversationId;
+    
+    console.log(`store card reply to ${card.storePath}`);
+
     cacheCardContentByProcessQueryKey(
       card.accountId,
       primaryConversationId,
