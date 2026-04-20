@@ -45,3 +45,4 @@ docs/plans/
 
 # playwright-generated files
 .playwright*/
+pnpm-workspace.yaml
